@@ -2627,7 +2627,10 @@ function sendOverdueNotifications() {
       // 通知間隔チェック: 最終通知日から notifyIntervalDays 未満なら再通知しない
       const lastNotified = row.length > LAST_NOTIFIED_COL - 1 ? row[LAST_NOTIFIED_COL - 1] : "";
       if (lastNotified instanceof Date && !isNaN(lastNotified)) {
-        const daysSinceNotified = Math.floor((today - lastNotified) / (1000 * 60 * 60 * 24));
+        // 時刻成分を切り捨てて日付単位で比較する(9時送信の時刻が残ると間隔が1日長く判定されるため)
+        const lastNotifiedDay = new Date(lastNotified);
+        lastNotifiedDay.setHours(0, 0, 0, 0);
+        const daysSinceNotified = Math.floor((today - lastNotifiedDay) / (1000 * 60 * 60 * 24));
         if (daysSinceNotified < notifyIntervalDays) {
           skipped++;
           continue;
@@ -2752,7 +2755,9 @@ function removeOverdueTrigger() {
   try {
     let removed = 0;
     ScriptApp.getProjectTriggers().forEach(trigger => {
-      if (trigger.getHandlerFunction() === 'sendOverdueNotifications') {
+      // 旧ハンドラー名(sendOverdueReminders)で設置済みのトリガーも合わせて解除する
+      const handler = trigger.getHandlerFunction();
+      if (handler === 'sendOverdueNotifications' || handler === 'sendOverdueReminders') {
         ScriptApp.deleteTrigger(trigger);
         removed++;
       }
