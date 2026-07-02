@@ -524,8 +524,7 @@
       
     </div>
 
-    <!-- バーコード読み取りライブラリ (QuaggaJSを使用) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <!-- バーコード読み取りは共通スキャナー部品で処理 -->
     <script>
       let isScanning = false;
       let scannedBookIds = []; // 返却する書籍IDを保持する配列
@@ -1040,6 +1039,29 @@
         }, 300);
       }
 
+    </script>
+    <?!= includeHtml_('barcode_scanner'); ?>
+    <script>
+      LiteLibraryBarcodeScanner.configure({
+        contexts: {
+          'interactive': {
+            inputFieldId: 'book-id',
+            label: '書籍ID',
+            title: '返却する書籍IDをスキャン',
+            readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'code_93_reader']
+          }
+        },
+        onOpen: function() {
+          isScanning = true;
+          setMessage('書籍IDスキャン用ウィンドウを開いています...');
+        },
+        onClose: function() {
+          isScanning = false;
+        },
+        onScan: function() {
+          searchUnreturnedBooks();
+        }
+      });
     </script>
     <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
     <script>

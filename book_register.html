@@ -5,7 +5,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>書籍登録システム</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js" integrity="sha512-bCsBoYoW6zE0aja5xcIyoCDPfT27+cGr7AOCqelttLVRGay6EKGQbR6wm6SUcUGOMGXJpj+jrIpMS6i80+kZPw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
     @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
@@ -605,6 +604,7 @@
     <div id="status-message" class="status-message hidden"></div>
   </div>
 
+  <?!= includeHtml_('barcode_scanner'); ?>
   <script>
     // グローバル変数
     let quaggaInitialized = false;
@@ -650,22 +650,39 @@
       const bookThumbnail = document.getElementById('book-thumbnail');
       const registerButton = document.getElementById('register-button');
       const statusMessage = document.getElementById('status-message');
+
+      LiteLibraryBarcodeScanner.configure({
+        contexts: {
+          'camera-view': {
+            inputFieldId: 'isbn-input',
+            label: 'ISBN',
+            title: 'ISBNバーコードをスキャン',
+            readers: ['ean_reader', 'ean_8_reader', 'code_128_reader', 'code_39_reader', 'code_93_reader']
+          }
+        },
+        onOpen: function() {
+          startButton.disabled = true;
+          showStatusMessage('ISBNスキャン用ウィンドウを開いています...', '');
+        },
+        onClose: function() {
+          startButton.disabled = false;
+        },
+        onScan: function(result) {
+          isbnInput.value = result.code;
+          showStatusMessage(`ISBN「${result.code}」を読み取りました。`, '');
+          fetchBookInfo(result.code);
+        }
+      });
       
       // カメラ起動ボタンのイベントリスナー
       startButton.addEventListener('click', function() {
-        const container = document.getElementById('scanner-container-register');
-        container.style.display = 'flex';
-        initQuagga();
-        startButton.disabled = true;
+        LiteLibraryBarcodeScanner.open('camera-view', 'isbn-input');
       });
       
       
       // closeScanner関数をグローバルに定義
       window.closeScanner = function(viewportId) {
-        const container = document.getElementById('scanner-container-register');
-        container.style.display = 'none';
-        stopQuagga();
-        startButton.disabled = false;
+        LiteLibraryBarcodeScanner.close();
       };
       
       // 検索ボタンのイベントリスナー
@@ -988,23 +1005,7 @@
 
       // カメラ切り替え関数
       window.switchCamera = function(viewportId) {
-        // カメラの向きを切り替え
-        currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-        
-        // 現在のスキャナーを停止
-        stopQuagga();
-        const container = document.getElementById('scanner-container-register');
-        container.style.display = 'none';
-        
-        // ボタンの状態を元に戻す
-        startButton.disabled = false;
-        
-        // 新しいカメラ設定でスキャナーを再起動
-        setTimeout(() => {
-          container.style.display = 'flex';
-          initQuagga();
-          startButton.disabled = true;
-          }, 300);
+        LiteLibraryBarcodeScanner.switchCamera(viewportId);
       };
     });
   </script>
