@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>利用者情報編集</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+    
+    /* --- General Styles --- */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', sans-serif;
+      height: 100%;
+      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
+      color: #2c3e50;
+      line-height: 1.7;
+      font-size: 48px;
+      -webkit-text-size-adjust: 100%;
+      position: relative;
+    }
+    
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 35px,
+          rgba(139, 111, 78, 0.03) 35px,
+          rgba(139, 111, 78, 0.03) 70px
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .container {
+      position: relative;
+      z-index: 2;
+      margin: 0;
+      padding: 45px;
+      background-color: rgba(255, 255, 255, 0.95);
+      width: 100%;
+      min-height: 100vh;
+      box-sizing: border-box;
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #8b6f4e;
+      margin-top: 0;
+      margin-bottom: 90px;
+      border-bottom: 6px solid #d4af37;
+      padding-bottom: 60px;
+      font-size: 72px;
+      font-family: 'Noto Serif JP', serif;
+      font-weight: 700;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    
+    h1::before {
+      content: "✏️";
+      display: block;
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    
+    /* --- Search Section --- */
+    .search-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+    }
+    
+    .search-form {
+      display: flex;
+      gap: 30px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    
+    .form-group {
+      flex: 1;
+      min-width: 400px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 15px;
+      font-weight: 700;
+      color: #8b6f4e;
+      font-size: 42px;
+    }
+    
+    input[type="text"], input[type="email"], input[type="tel"] {
+      width: 100%;
+      padding: 25px;
+      border: 3px solid #d4af37;
+      border-radius: 15px;
+      font-size: 42px;
+      font-family: 'Noto Sans JP', sans-serif;
+      box-sizing: border-box;
+      background: rgba(255, 255, 255, 0.9);
+    }
+    
+    input[type="text"]:focus, input[type="email"]:focus, input[type="tel"]:focus {
+      outline: none;
+      border-color: #8b6f4e;
+      box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.2);
+    }
+    
+    /* --- Button Styles --- */
+    button {
+      color: white;
+      padding: 30px 60px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 48px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      margin-top: 30px;
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      min-height: 100px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+    
+    button::before {
+      content: "";
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+      transform: scale(0);
+      transition: transform 0.5s ease;
+    }
+    
+    button:hover::before {
+      transform: scale(1);
+    }
+    
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    }
+    
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .search-button {
+      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+    }
+    
+    .save-button {
+      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+    }
+    
+    .cancel-button {
+      background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+    }
+    
+    .delete-button {
+      background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    }
+    
+    /* --- User Info Section --- */
+    .user-info-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+      display: none;
+    }
+    
+    .user-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 45px;
+      padding-bottom: 30px;
+      border-bottom: 3px solid #d4af37;
+    }
+    
+    .user-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #8b6f4e;
+      font-family: 'Noto Serif JP', serif;
+      margin: 0;
+    }
+    
+    .user-id {
+      font-size: 48px;
+      color: #6c757d;
+      font-weight: 700;
+    }
+    
+    .edit-form {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+    }
+    
+    .info-row {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+    
+    .info-item {
+      flex: 1;
+      min-width: 400px;
+    }
+    
+    .info-label {
+      font-size: 36px;
+      color: #6c757d;
+      margin-bottom: 10px;
+    }
+    
+    .info-value {
+      font-size: 42px;
+      color: #2c3e50;
+      font-weight: 700;
+      margin-bottom: 20px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.5);
+      border-radius: 10px;
+    }
+    
+    /* --- History Section --- */
+    .history-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+    }
+    
+    .history-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 30px;
+      font-family: 'Noto Serif JP', serif;
+    }
+    
+    .history-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 30px;
+      margin-bottom: 45px;
+    }
+    
+    .stat-card {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stat-value {
+      font-size: 60px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 10px;
+    }
+    
+    .stat-label {
+      font-size: 36px;
+      color: #6c757d;
+    }
+    
+    /* --- Table Styles --- */
+    .table-container {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    th {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 25px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 42px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    td {
+      padding: 20px 25px;
+      border-bottom: 2px solid #f0f0f0;
+      font-size: 42px;
+    }
+    
+    tr:hover {
+      background: rgba(212, 175, 55, 0.1);
+    }
+    
+    .status-returned {
+      color: #28a745;
+      font-weight: 700;
+    }
+    
+    .status-not-returned {
+      color: #dc3545;
+      font-weight: 700;
+    }
+    
+    /* --- Message Area --- */
+    #message {
+      margin-top: 45px;
+      font-weight: 700;
+      padding: 45px;
+      border-radius: 20px;
+      text-align: center;
+      font-size: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    #message:not(:empty) {
+      display: block;
+      background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
+      border: 3px solid #b8dffc;
+      color: #0056b3;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    #message.success {
+      background: linear-gradient(135deg, #d4edda 0%, #c8e6cc 100%);
+      color: #155724;
+      border: 3px solid #c3e6cb;
+    }
+    
+    #message.error {
+      background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
+      color: #721c24;
+      border: 3px solid #f5c6cb;
+    }
+    
+    /* --- Modal --- */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-content {
+      background-color: #fefefe;
+      margin: 15% auto;
+      padding: 60px;
+      border: 1px solid #888;
+      width: 80%;
+      max-width: 800px;
+      border-radius: 20px;
+      box-shadow: 0 10px 50px rgba(0, 0, 0, 0.3);
+      text-align: center;
+    }
+    
+    .modal-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #dc3545;
+      margin-bottom: 30px;
+    }
+    
+    .modal-text {
+      font-size: 42px;
+      color: #2c3e50;
+      margin-bottom: 45px;
+    }
+    
+    .modal-buttons {
+      display: flex;
+      gap: 30px;
+      justify-content: center;
+    }
+    
+    /* --- Menu Button --- */
+    .menu-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 30px 60px;
+      font-size: 48px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 15px;
+      margin: 30px 0;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      font-weight: 700;
+    }
+    
+    .menu-button:hover {
+      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    
+    .menu-button-container {
+      text-align: center;
+      margin: 30px 0;
+      position: relative;
+      z-index: 2;
+    }
+    
+    /* --- Responsive Design --- */
+    @media (max-width: 600px) {
+      .container {
+        padding: 30px;
+      }
+      h1 {
+        font-size: 60px;
+      }
+      th, td {
+        font-size: 36px;
+        padding: 20px;
+      }
+      button {
+        font-size: 42px;
+        padding: 24px 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
+  <div class="container">
+    <h1>利用者情報編集</h1>
+    
+    <!-- 利用者検索 -->
+    <div class="search-section">
+      <form class="search-form" onsubmit="searchUser(event)">
+        <div class="form-group">
+          <label for="user-id">利用者ID</label>
+          <input type="text" id="user-id" placeholder="利用者IDを入力して検索" required>
+        </div>
+        <button type="submit" class="search-button">🔍 検索</button>
+      </form>
+    </div>
+    
+    <!-- 利用者情報編集 -->
+    <div class="user-info-section" id="user-info-section">
+      <div class="user-header">
+        <h2 class="user-title">利用者情報</h2>
+        <span class="user-id" id="display-user-id"></span>
+      </div>
+      
+      <form class="edit-form" onsubmit="saveUser(event)">
+        <div class="info-row">
+          <div class="info-item">
+            <label for="user-name">氏名</label>
+            <input type="text" id="user-name" required>
+          </div>
+          <div class="info-item">
+            <label for="user-email">メールアドレス</label>
+            <input type="email" id="user-email">
+          </div>
+        </div>
+        
+        <div class="info-row">
+          <div class="info-item">
+            <label for="user-phone">電話番号</label>
+            <input type="tel" id="user-phone">
+          </div>
+          <div class="info-item">
+            <label for="user-address">住所</label>
+            <input type="text" id="user-address">
+          </div>
+        </div>
+        
+        <div class="info-row">
+          <div class="info-item">
+            <div class="info-label">登録日</div>
+            <div class="info-value" id="registration-date">-</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">最終利用日</div>
+            <div class="info-value" id="last-use-date">-</div>
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 30px; justify-content: center; margin-top: 45px;">
+          <button type="submit" class="save-button">💾 保存</button>
+          <button type="button" class="cancel-button" onclick="cancelEdit()">キャンセル</button>
+          <button type="button" class="delete-button" onclick="confirmDelete()">🗑️ 削除</button>
+        </div>
+      </form>
+    </div>
+    
+    <!-- 貸出履歴 -->
+    <div class="history-section" id="history-section" style="display: none;">
+      <h3 class="history-title">📚 貸出履歴</h3>
+      
+      <div class="history-stats">
+        <div class="stat-card">
+          <div class="stat-value" id="total-borrowed">0</div>
+          <div class="stat-label">累計貸出数</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="current-borrowed">0</div>
+          <div class="stat-label">貸出中</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="overdue-count">0</div>
+          <div class="stat-label">延滞中</div>
+        </div>
+      </div>
+      
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>書籍ID</th>
+              <th>書籍名</th>
+              <th>貸出日</th>
+              <th>返却予定日</th>
+              <th>状態</th>
+            </tr>
+          </thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+    
+    <div id="message"></div>
+  </div>
+  
+  <!-- 削除確認モーダル -->
+  <div id="deleteModal" class="modal">
+    <div class="modal-content">
+      <h3 class="modal-title">⚠️ 削除確認</h3>
+      <p class="modal-text">この利用者を削除してもよろしいですか？<br>この操作は取り消せません。</p>
+      <div class="modal-buttons">
+        <button class="delete-button" onclick="deleteUser()">削除する</button>
+        <button class="cancel-button" onclick="closeModal()">キャンセル</button>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    let currentUserData = null;
+    
+    // 利用者を検索する関数
+    function searchUser(event) {
+      event.preventDefault();
+      const userId = document.getElementById('user-id').value.trim();
+      
+      if (!userId) return;
+      
+      showMessage('利用者情報を検索中...', '');
+      
+      google.script.run
+        .withSuccessHandler(function(data) {
+          console.log('検索結果:', data);
+          console.log('データ型:', typeof data);
+          console.log('JSON文字列:', JSON.stringify(data));
+          if (data) {
+            currentUserData = data;
+            displayUserInfo(data);
+            loadUserHistory(userId);
+            showMessage('', '');
+          } else {
+            console.log('利用者が見つかりませんでした。入力されたID:', userId);
+            showMessage('利用者が見つかりません。\n入力されたID: ' + userId, 'error');
+            document.getElementById('user-info-section').style.display = 'none';
+            document.getElementById('history-section').style.display = 'none';
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.error('検索エラー:', error);
+          showMessage('検索中にエラーが発生しました: ' + error.message, 'error');
+        })
+        .getUserDetails(userId);
+    }
+    
+    // 利用者情報を表示する関数
+    function displayUserInfo(data) {
+      document.getElementById('user-info-section').style.display = 'block';
+      document.getElementById('display-user-id').textContent = 'ID: ' + data.userId;
+      document.getElementById('user-name').value = data.name || '';
+      document.getElementById('user-email').value = data.email || '';
+      document.getElementById('user-phone').value = data.phone || '';
+      document.getElementById('user-address').value = data.address || '';
+      document.getElementById('registration-date').textContent = formatDate(data.registrationDate) || '-';
+      document.getElementById('last-use-date').textContent = formatDate(data.lastUseDate) || '-';
+    }
+    
+    // 利用者の貸出履歴を読み込む関数
+    function loadUserHistory(userId) {
+      google.script.run
+        .withSuccessHandler(function(history) {
+          displayUserHistory(history);
+        })
+        .withFailureHandler(function(error) {
+          console.error('履歴読み込みエラー:', error);
+        })
+        .getUserLendingHistory(userId);
+    }
+    
+    // 貸出履歴を表示する関数
+    function displayUserHistory(history) {
+      document.getElementById('history-section').style.display = 'block';
+      
+      // 統計情報
+      const totalBorrowed = history.length;
+      const currentBorrowed = history.filter(h => h.status === '未返却').length;
+      const overdueCount = history.filter(h => h.status === '未返却' && new Date(h.dueDate) < new Date()).length;
+      
+      document.getElementById('total-borrowed').textContent = totalBorrowed;
+      document.getElementById('current-borrowed').textContent = currentBorrowed;
+      document.getElementById('overdue-count').textContent = overdueCount;
+      
+      // 履歴テーブル
+      const tbody = document.getElementById('history-body');
+      tbody.innerHTML = '';
+      
+      // 最新20件のみ表示
+      const recentHistory = history.slice(0, 20);
+      recentHistory.forEach(record => {
+        const row = document.createElement('tr');
+        const statusClass = record.status === '返却済' ? 'status-returned' : 'status-not-returned';
+        
+        row.innerHTML = `
+          <td>${escapeHtml(record.bookId)}</td>
+          <td>${escapeHtml(record.bookTitle)}</td>
+          <td>${formatDate(record.lendingDate)}</td>
+          <td>${formatDate(record.dueDate)}</td>
+          <td class="${statusClass}">${record.status}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+    
+    // 利用者情報を保存する関数
+    function saveUser(event) {
+      event.preventDefault();
+      
+      if (!currentUserData) return;
+      
+      const updatedData = {
+        userId: currentUserData.userId,
+        name: document.getElementById('user-name').value.trim(),
+        email: document.getElementById('user-email').value.trim(),
+        phone: document.getElementById('user-phone').value.trim(),
+        address: document.getElementById('user-address').value.trim()
+      };
+      
+      showMessage('保存中...', '');
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showMessage('利用者情報を更新しました', 'success');
+          currentUserData = updatedData;
+        })
+        .withFailureHandler(function(error) {
+          showMessage('保存中にエラーが発生しました: ' + error.message, 'error');
+        })
+        .updateUserInfo(updatedData);
+    }
+    
+    // 編集をキャンセルする関数
+    function cancelEdit() {
+      if (currentUserData) {
+        displayUserInfo(currentUserData);
+      } else {
+        document.getElementById('user-info-section').style.display = 'none';
+        document.getElementById('history-section').style.display = 'none';
+      }
+    }
+    
+    // 削除確認を表示する関数
+    function confirmDelete() {
+      document.getElementById('deleteModal').style.display = 'block';
+    }
+    
+    // モーダルを閉じる関数
+    function closeModal() {
+      document.getElementById('deleteModal').style.display = 'none';
+    }
+    
+    // 利用者を削除する関数
+    function deleteUser() {
+      if (!currentUserData) return;
+      
+      showMessage('削除中...', '');
+      closeModal();
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showMessage('利用者を削除しました', 'success');
+          setTimeout(function() {
+            document.getElementById('user-info-section').style.display = 'none';
+            document.getElementById('history-section').style.display = 'none';
+            document.getElementById('user-id').value = '';
+            currentUserData = null;
+          }, 2000);
+        })
+        .withFailureHandler(function(error) {
+          showMessage('削除中にエラーが発生しました: ' + error.message, 'error');
+        })
+        .deleteUser(currentUserData.userId);
+    }
+    
+    // メッセージを表示する関数
+    function showMessage(message, type) {
+      const messageEl = document.getElementById('message');
+      messageEl.textContent = message;
+      messageEl.className = type;
+      
+      if (type === 'success' || (type !== 'error' && message === '')) {
+        setTimeout(function() {
+          messageEl.textContent = '';
+          messageEl.className = '';
+        }, 3000);
+      }
+    }
+    
+    // HTMLエスケープ関数
+    function escapeHtml(unsafe) {
+      if (!unsafe) return '';
+      return unsafe
+        .toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+    
+    // 日付フォーマット関数
+    function formatDate(dateString) {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    }
+    
+    
+    // モーダル外クリックで閉じる
+    window.onclick = function(event) {
+      const modal = document.getElementById('deleteModal');
+      if (event.target == modal) {
+        closeModal();
+      }
+    }
+  </script>
+  
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+  <script>
+    // メニューボタンのURLを設定（高速化版）
+    (function() {
+      // URLをキャッシュ
+      let cachedUrl = sessionStorage.getItem('webAppUrl');
+      
+      if (cachedUrl) {
+        // キャッシュがあれば即座に設定
+        document.getElementById('menu-button-top').href = cachedUrl;
+        document.getElementById('menu-button-bottom').href = cachedUrl;
+      } else {
+        // キャッシュがない場合は取得してキャッシュに保存
+        google.script.run.withSuccessHandler(function(url) {
+          sessionStorage.setItem('webAppUrl', url);
+          document.getElementById('menu-button-top').href = url;
+          document.getElementById('menu-button-bottom').href = url;
+        }).getWebAppUrl();
+      }
+    })();
+  </script>
+</body>
+</html>

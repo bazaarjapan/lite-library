@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>図書カード発行システム</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+    
+    /* --- General Styles --- */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', sans-serif;
+      height: 100%;
+      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
+      color: #2c3e50;
+      line-height: 1.7;
+      font-size: 48px;
+      -webkit-text-size-adjust: 100%;
+    }
+    
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 35px,
+          rgba(139, 111, 78, 0.03) 35px,
+          rgba(139, 111, 78, 0.03) 70px
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .container {
+      position: relative;
+      z-index: 2;
+      margin: 0;
+      padding: 45px;
+      background-color: rgba(255, 255, 255, 0.95);
+      width: 100%;
+      min-height: 100vh;
+      box-sizing: border-box;
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #8b6f4e;
+      margin-top: 0;
+      margin-bottom: 90px;
+      border-bottom: 6px solid #d4af37;
+      padding-bottom: 60px;
+      font-size: 72px;
+      font-family: 'Noto Serif JP', serif;
+      font-weight: 700;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    
+    h1::before {
+      content: "📚";
+      position: absolute;
+      left: 50%;
+      bottom: -20px;
+      transform: translateX(-50%);
+      font-size: 48px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 0 20px;
+    }
+    
+    /* --- Form Styles --- */
+    .form-group {
+      margin-bottom: 90px;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 45px;
+      font-weight: 700;
+      color: #8b6f4e;
+      font-size: 54px;
+      font-family: 'Noto Serif JP', serif;
+      position: relative;
+      padding-left: 60px;
+    }
+    
+    label::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: #d4af37;
+      font-size: 48px;
+    }
+    
+    input[type="text"] {
+      width: 100%;
+      padding: 45px;
+      border: 3px solid #d4af37;
+      border-radius: 15px;
+      box-sizing: border-box;
+      font-size: 48px;
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255, 255, 255, 0.9);
+      transition: all 0.3s ease;
+    }
+    
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #8b6f4e;
+      box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.2);
+    }
+    
+    input[readonly] {
+      background-color: #f8f5f0;
+      cursor: not-allowed;
+      border-color: #ddd;
+    }
+    
+    /* --- Button Styles --- */
+    button {
+      color: white;
+      padding: 45px 60px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 48px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      margin-top: 45px;
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      min-height: 132px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+    
+    button::before {
+      content: "";
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+      transform: scale(0);
+      transition: transform 0.5s ease;
+    }
+    
+    button:hover::before {
+      transform: scale(1);
+    }
+    
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    }
+    
+    button:disabled {
+      background-color: #cccccc;
+      color: #999999;
+      cursor: not-allowed;
+      opacity: 0.7;
+      box-shadow: none;
+    }
+    
+    /* 検索ボタン */
+    #search-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      margin: 0;
+      white-space: nowrap;
+      min-width: 200px;
+    }
+    #search-button:hover {
+      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
+    }
+    
+    /* 発行ボタン */
+    #generate-button {
+      display: block;
+      width: 100%;
+      margin-top: 75px;
+      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+      padding: 45px 60px;
+      font-size: 54px;
+      min-height: 150px;
+      position: relative;
+    }
+    
+    #generate-button::after {
+      content: "🎫";
+      position: absolute;
+      right: 60px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 60px;
+    }
+    
+    #generate-button:hover {
+      background: linear-gradient(135deg, #b8941f 0%, #9a7a19 100%);
+    }
+    
+    /* 印刷ボタン */
+    #print-button {
+      display: block;
+      width: 100%;
+      margin-top: 45px;
+      background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+      padding: 45px 60px;
+      font-size: 54px;
+      min-height: 150px;
+      position: relative;
+    }
+    
+    #print-button::after {
+      content: "🖨️";
+      position: absolute;
+      right: 60px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 60px;
+    }
+    
+    #print-button:hover {
+      background: linear-gradient(135deg, #495057 0%, #343a40 100%);
+    }
+    
+    /* --- カードプレビューエリア --- */
+    .card-preview {
+      margin-top: 90px;
+      padding: 60px;
+      border: 3px solid #d4af37;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #fdfcfb 0%, #f5f1e8 100%);
+      display: none;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    
+    .card-preview::before {
+      content: "";
+      position: absolute;
+      top: -15px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 120px;
+      height: 30px;
+      background: #d4af37;
+      border-radius: 15px 15px 0 0;
+    }
+    
+    .card-preview h2 {
+      margin-top: 0;
+      color: #8b6f4e;
+      font-size: 60px;
+      margin-bottom: 45px;
+      font-family: 'Noto Serif JP', serif;
+      text-align: center;
+    }
+    
+    /* --- 図書カードスタイル（印刷用） --- */
+    .library-card {
+      width: 85.6mm;
+      height: 54mm;
+      border: 2px solid #8b6f4e;
+      border-radius: 5mm;
+      padding: 4mm;
+      box-sizing: border-box;
+      background: linear-gradient(to bottom, #ffffff 0%, #fdfcfb 100%);
+      font-family: 'Noto Sans JP', sans-serif;
+      position: relative;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    .library-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-image: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 10mm,
+          rgba(212, 175, 55, 0.03) 10mm,
+          rgba(212, 175, 55, 0.03) 20mm
+        );
+      border-radius: 5mm;
+      pointer-events: none;
+    }
+    
+    .card-header {
+      text-align: center;
+      border-bottom: 2px solid #d4af37;
+      padding-bottom: 2mm;
+      margin-bottom: 2mm;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .card-title {
+      font-size: 14pt;
+      font-weight: bold;
+      margin: 0;
+      font-family: 'Noto Serif JP', serif;
+      color: #8b6f4e;
+    }
+    
+    .card-subtitle {
+      font-size: 8pt;
+      margin: 0;
+      color: #8b6f4e;
+      font-style: italic;
+    }
+    
+    .card-body {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    
+    .card-info {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 3mm 0;
+    }
+    
+    .card-field {
+      display: flex;
+      align-items: center;
+      font-size: 12pt;
+      margin-bottom: 3mm;
+    }
+    
+    .card-field:last-child {
+      margin-bottom: 0;
+    }
+    
+    .card-id-name {
+      display: block;
+      font-size: 12pt;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .card-label {
+      font-weight: bold;
+      margin-right: 2mm;
+    }
+    
+    .card-value {
+      flex-grow: 1;
+    }
+    
+    .card-barcode {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 15mm;
+      padding: 1mm 0;
+      overflow: hidden;
+    }
+    
+    .card-barcode img {
+      width: 100%;
+      height: auto;
+      max-height: 12mm;
+      max-width: 60mm;
+      object-fit: contain;
+    }
+    
+    /* --- Message Area --- */
+    .status-message {
+      margin-top: 90px;
+      font-weight: 700;
+      padding: 45px;
+      border-radius: 20px;
+      text-align: center;
+      font-size: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    .status-message:not(:empty) {
+      display: block;
+      background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
+      border: 3px solid #b8dffc;
+      color: #0056b3;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    .status-message:not(:empty)::before {
+      content: "ℹ️";
+      position: absolute;
+      left: 45px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 60px;
+    }
+    .success {
+      background: linear-gradient(135deg, #d4edda 0%, #c8e6cc 100%) !important;
+      color: #155724 !important;
+      border: 3px solid #c3e6cb !important;
+    }
+    .success::before {
+      content: "✅" !important;
+    }
+    .error {
+      background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%) !important;
+      color: #721c24 !important;
+      border: 3px solid #f5c6cb !important;
+    }
+    .error::before {
+      content: "⚠️" !important;
+    }
+    
+    /* --- Utility Classes --- */
+    .hidden {
+      display: none;
+    }
+    
+    /* --- Responsive Design --- */
+    @media (max-width: 600px) {
+      .container {
+        padding: 30px;
+      }
+      h1 {
+        font-size: 66px;
+        padding-left: 15px;
+        padding-right: 15px;
+      }
+      .form-group {
+        padding-left: 15px;
+        padding-right: 15px;
+      }
+      .status-message {
+        margin-left: 15px;
+        margin-right: 15px;
+        font-size: 45px;
+      }
+      button {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 30px;
+      }
+    }
+    
+    /* --- Menu Button --- */
+    .menu-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 30px 60px;
+      font-size: 48px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 15px;
+      margin: 30px 0;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      font-weight: 700;
+    }
+    .menu-button:hover {
+      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    .menu-button-container {
+      text-align: center;
+      margin: 30px 0;
+      position: relative;
+      z-index: 2;
+    }
+  </style>
+</head>
+<body>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
+  <div class="container">
+    <h1>図書カード発行システム</h1>
+    
+    <div class="form-group">
+      <label for="user-id">利用者ID</label>
+      <div style="display: flex; gap: 30px; align-items: center;">
+        <input type="text" id="user-id" name="userId" placeholder="利用者IDを入力してください（例：R00001）" style="flex: 1;">
+        <button id="search-button">検索</button>
+      </div>
+    </div>
+    
+    <div id="user-info" class="hidden">
+      <div class="form-group">
+        <label for="user-name">氏名</label>
+        <input type="text" id="user-name" name="userName" readonly>
+      </div>
+      
+      <button id="generate-button">図書カードを生成</button>
+    </div>
+    
+    <div id="card-preview" class="card-preview">
+      <h2>図書カード プレビュー</h2>
+      <div id="card-container">
+        <!-- カードがここに表示されます -->
+      </div>
+      <button id="print-button">印刷する</button>
+    </div>
+    
+    <div id="status-message" class="status-message hidden"></div>
+  </div>
+
+  <script>
+    // DOMが読み込まれたら実行
+    document.addEventListener('DOMContentLoaded', function() {
+      // 要素の取得
+      const userIdField = document.getElementById('user-id');
+      const userNameField = document.getElementById('user-name');
+      const searchButton = document.getElementById('search-button');
+      const generateButton = document.getElementById('generate-button');
+      const printButton = document.getElementById('print-button');
+      const statusMessage = document.getElementById('status-message');
+      const userInfo = document.getElementById('user-info');
+      const cardPreview = document.getElementById('card-preview');
+      const cardContainer = document.getElementById('card-container');
+      
+      // 検索ボタンのイベントリスナー
+      searchButton.addEventListener('click', searchUser);
+      
+      // Enterキーでも検索できるように
+      userIdField.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+          searchUser();
+        }
+      });
+      
+      // 生成ボタンのイベントリスナー
+      generateButton.addEventListener('click', generateCard);
+      
+      // 印刷ボタンのイベントリスナー
+      printButton.addEventListener('click', printCard);
+      
+      // 利用者を検索する関数
+      function searchUser() {
+        const userId = userIdField.value.trim();
+        console.log('検索開始: userId =', userId);
+        
+        if (!userId) {
+          showStatusMessage('利用者IDを入力してください', 'error');
+          return;
+        }
+        
+        showStatusMessage('利用者情報を検索中...', '');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('検索結果:', result);
+            if (result) {
+              userNameField.value = result.name;
+              document.getElementById('user-info').classList.remove('hidden');
+              showStatusMessage('利用者情報を取得しました', 'success');
+            } else {
+              userNameField.value = '';
+              document.getElementById('user-info').classList.add('hidden');
+              showStatusMessage('指定された利用者IDが見つかりません', 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('検索エラー:', error);
+            showStatusMessage('エラーが発生しました: ' + error.message, 'error');
+            document.getElementById('user-info').classList.add('hidden');
+          })
+          .getUserInfo(userId);
+      }
+      
+      // カードを生成する関数
+      function generateCard() {
+        const userId = userIdField.value.trim();
+        const userName = userNameField.value.trim();
+        
+        if (!userId || !userName) {
+          showStatusMessage('利用者情報が不足しています', 'error');
+          return;
+        }
+        
+        // バーコードURL生成（印刷用に高解像度）
+        const barcodeUrl = 'https://barcode.tec-it.com/barcode.ashx?data=' + 
+                          encodeURIComponent(userId) + 
+                          '&code=Code128&dpi=300&borderwidth=0&bordercolor=FFFFFF&height=12&width=50&unit=mm';
+        
+        // カードHTML生成
+        const cardHtml = [
+          '<div class="library-card">',
+          '  <div class="card-header">',
+          '    <h3 class="card-title">図書館利用者カード</h3>',
+          '    <p class="card-subtitle">LIBRARY CARD</p>',
+          '  </div>',
+          '  <div class="card-body">',
+          '    <div class="card-info">',
+          '      <div class="card-id-name">',
+          '        <span class="card-label">ID:</span> ' + escapeHtml(userId) + '　　<span class="card-label">氏名:</span> ' + escapeHtml(userName),
+          '      </div>',
+          '    </div>',
+          '    <div class="card-barcode">',
+          '      <img src="' + barcodeUrl + '" alt="' + escapeHtml(userId) + '">',
+          '    </div>',
+          '  </div>',
+          '</div>'
+        ].join('\n');
+        
+        cardContainer.innerHTML = cardHtml;
+        cardPreview.style.display = 'block';
+        
+        // カードデータを保存（印刷用）
+        window.cardData = {
+          html: cardHtml,
+          userId: userId,
+          userName: userName
+        };
+        
+        showStatusMessage('図書カードを生成しました', 'success');
+      }
+      
+      // HTMLエスケープ関数
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+      
+      // カードを印刷する関数
+      function printCard() {
+        if (!window.cardData) {
+          showStatusMessage('印刷するカードがありません', 'error');
+          return;
+        }
+        
+        // 新しいウィンドウを開く
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        
+        // 印刷用HTMLを作成（シンプルな文字列連結）
+        let printHtml = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>図書カード印刷</title>';
+        printHtml += '<style>';
+        printHtml += '@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap");';
+        printHtml += '@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap");';
+        printHtml += 'body { margin: 0; padding: 20mm; font-family: "Noto Sans JP", sans-serif; background: white; }';
+        printHtml += '.library-card { width: 85.6mm; height: 54mm; border: 2px solid #8b6f4e; border-radius: 5mm; padding: 4mm; box-sizing: border-box; background: linear-gradient(to bottom, #ffffff 0%, #fdfcfb 100%); font-family: "Noto Sans JP", sans-serif; position: relative; margin: 0 auto; display: flex; flex-direction: column; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); }';
+        printHtml += '.library-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: repeating-linear-gradient(45deg, transparent, transparent 10mm, rgba(212, 175, 55, 0.03) 10mm, rgba(212, 175, 55, 0.03) 20mm); border-radius: 5mm; pointer-events: none; }';
+        printHtml += '.card-header { text-align: center; border-bottom: 2px solid #d4af37; padding-bottom: 2mm; margin-bottom: 2mm; position: relative; z-index: 1; }';
+        printHtml += '.card-title { font-size: 14pt; font-weight: bold; margin: 0; font-family: "Noto Serif JP", serif; color: #8b6f4e; }';
+        printHtml += '.card-subtitle { font-size: 8pt; margin: 0; color: #8b6f4e; font-style: italic; }';
+        printHtml += '.card-body { flex-grow: 1; display: flex; flex-direction: column; justify-content: space-between; position: relative; z-index: 1; }';
+        printHtml += '.card-info { flex-grow: 1; display: flex; flex-direction: column; justify-content: center; padding: 3mm 0; }';
+        printHtml += '.card-id-name { display: block; font-size: 12pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }';
+        printHtml += '.card-label { font-weight: bold; margin-right: 2mm; }';
+        printHtml += '.card-barcode { display: flex; align-items: center; justify-content: center; height: 15mm; padding: 1mm 0; overflow: hidden; }';
+        printHtml += '.card-barcode img { width: 100%; height: auto; max-height: 12mm; max-width: 60mm; object-fit: contain; }';
+        printHtml += '@media print { body { margin: 0; padding: 0; } .library-card { page-break-inside: avoid; } }';
+        printHtml += '</style>';
+        printHtml += '</head><body>';
+        printHtml += window.cardData.html;
+        printHtml += '</body></html>';
+        
+        // デバッグ用
+        console.log('印刷用HTML:', printHtml);
+        console.log('カードデータ:', window.cardData);
+        
+        // 新しいウィンドウにHTMLを書き込む
+        printWindow.document.open();
+        printWindow.document.write(printHtml);
+        printWindow.document.close();
+        
+        // 印刷を遅延実行
+        printWindow.onload = function() {
+          setTimeout(function() {
+            printWindow.print();
+            printWindow.onafterprint = function() {
+              printWindow.close();
+            };
+          }, 1000);
+        };
+      }
+      
+      // ステータスメッセージを表示する関数
+      function showStatusMessage(message, type) {
+        statusMessage.textContent = message;
+        statusMessage.className = 'status-message';
+        if (type) {
+          statusMessage.classList.add(type);
+        }
+        statusMessage.classList.remove('hidden');
+        
+        // 成功メッセージは3秒後に消える
+        if (type === 'success') {
+          setTimeout(function() {
+            statusMessage.classList.add('hidden');
+          }, 3000);
+        }
+      }
+    });
+  </script>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+  <script>
+    // メニューボタンのURLを設定（高速化版）
+    (function() {
+      // URLをキャッシュ
+      let cachedUrl = sessionStorage.getItem('webAppUrl');
+      
+      if (cachedUrl) {
+        // キャッシュがあれば即座に設定
+        document.getElementById('menu-button-top').href = cachedUrl;
+        document.getElementById('menu-button-bottom').href = cachedUrl;
+      } else {
+        // キャッシュがない場合は取得してキャッシュに保存
+        google.script.run.withSuccessHandler(function(url) {
+          sessionStorage.setItem('webAppUrl', url);
+          document.getElementById('menu-button-top').href = url;
+          document.getElementById('menu-button-bottom').href = url;
+        }).getWebAppUrl();
+      }
+    })();
+    
+    // ブラウザの戻るボタンを無効化
+    window.history.pushState(null, null, window.location.href);
+    window.addEventListener('popstate', function(event) {
+      window.history.pushState(null, null, window.location.href);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>書籍登録システム</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js" integrity="sha512-bCsBoYoW6zE0aja5xcIyoCDPfT27+cGr7AOCqelttLVRGay6EKGQbR6wm6SUcUGOMGXJpj+jrIpMS6i80+kZPw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+    
+    /* --- General Styles --- */
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
+      color: #2c3e50;
+      margin: 0;
+      padding: 0;
+      line-height: 1.7;
+      font-size: 48px;
+      -webkit-text-size-adjust: 100%;
+      min-height: 100vh;
+      position: relative;
+    }
+    
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 35px,
+          rgba(139, 111, 78, 0.03) 35px,
+          rgba(139, 111, 78, 0.03) 70px
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .container {
+      position: relative;
+      z-index: 2;
+      margin: 0;
+      padding: 45px;
+      background-color: rgba(255, 255, 255, 0.95);
+      width: 100%;
+      min-height: 100vh;
+      box-sizing: border-box;
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      color: #8b6f4e;
+      margin-top: 0;
+      text-align: center;
+      margin-bottom: 90px;
+      border-bottom: 6px solid #d4af37;
+      padding-bottom: 60px;
+      font-size: 72px;
+      font-family: 'Noto Serif JP', serif;
+      font-weight: 700;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    
+    h1::before {
+      content: "📖";
+      display: block;
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    
+    /* --- Scanner Container --- */
+    /* スキャナーコンテナ */
+    .scanner-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #000;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* スキャナーヘッダー */
+    .scanner-header {
+      position: absolute;
+      top: 0;
+      right: 0;
+      padding: 20px;
+      z-index: 1002;
+    }
+
+    .close-scanner-btn {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 36px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    /* カメラ切り替えボタン */
+    .camera-switch-btn {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      font-size: 36px;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-right: 20px;
+    }
+
+    .camera-switch-btn:hover {
+      background-color: #0056b3;
+    }
+
+    /* スキャナービューポート */
+    .scanner-viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+    }
+
+    /* Quaggaの要素を制御 */
+    .scanner-viewport canvas,
+    .scanner-viewport video {
+      position: absolute !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+      object-fit: cover !important;
+    }
+
+    /* 不要な要素を完全に削除 */
+    .scanner-viewport br,
+    .scanner-viewport .drawingBuffer,
+    .scanner-viewport canvas:not(:last-child) {
+      display: none !important;
+    }
+
+    /* スマホ対応 */
+    @media (max-width: 768px) {
+      .scanner-viewport {
+        width: 100%;
+        height: 100%;
+      }
+      
+      .close-scanner-btn {
+        font-size: 24px;
+        padding: 10px 20px;
+      }
+    }
+
+    
+    /* --- Form Styles --- */
+    .form-group {
+      margin-bottom: 90px;
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 45px;
+      font-weight: 700;
+      color: #8b6f4e;
+      font-size: 54px;
+      font-family: 'Noto Serif JP', serif;
+      position: relative;
+      padding-left: 60px;
+    }
+    
+    label::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: #d4af37;
+      font-size: 48px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 45px;
+      border: 3px solid #d4af37;
+      border-radius: 15px;
+      box-sizing: border-box;
+      font-size: 48px;
+      font-family: 'Noto Sans JP', sans-serif;
+      background-color: rgba(255, 255, 255, 0.9);
+      color: #2c3e50;
+      transition: all 0.3s ease;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #8b6f4e;
+      background-color: #fff;
+      box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+    }
+    
+    input[readonly] {
+      background-color: rgba(245, 241, 232, 0.7);
+      cursor: not-allowed;
+      border-color: #e8dfd2;
+    }
+    
+    /* --- Button Styles --- */
+    .button-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 60px; /* 3倍に拡大 */
+      flex-wrap: wrap;
+    }
+    /* 基本ボタンスタイル */
+    button {
+      color: white;
+      padding: 45px 60px;
+      border: none;
+      border-radius: 24px;
+      cursor: pointer;
+      font-size: 48px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      margin-top: 45px;
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      min-height: 132px;
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5a40 100%);
+      box-shadow: 0 6px 20px rgba(139, 111, 78, 0.3);
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    button::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s;
+    }
+    
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(139, 111, 78, 0.4);
+    }
+    
+    button:hover::before {
+      left: 100%;
+    }
+    
+    button:active {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(139, 111, 78, 0.3);
+    }
+    
+    button:disabled {
+      background: #cccccc;
+      color: #999999;
+      cursor: not-allowed;
+      opacity: 0.7;
+      box-shadow: none;
+      transform: none;
+    }
+    
+    /* 機能別ボタン */
+    /* 補助ボタン - スキャン・検索用 */
+    .btn-utility, #start-button {
+      padding: 36px 60px;
+      background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+      margin-right: 30px;
+      font-size: 48px;
+      font-weight: 400;
+    }
+    
+    #search-button {
+      padding: 36px 60px;
+      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+      margin-right: 30px;
+      font-size: 48px;
+      font-weight: 400;
+    }
+    
+    #search-button:hover {
+      background: linear-gradient(135deg, #e0bb43 0%, #c4a02b 100%);
+    }
+    
+    /* アクションボタン - 登録・貸出用 */
+    .btn-action, #register-button {
+      display: block;
+      width: 100%;
+      margin-top: 75px;
+      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+      padding: 45px 60px;
+      font-size: 54px;
+      min-height: 150px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    #register-button::after {
+      content: "📚";
+      margin-left: 20px;
+      font-size: 48px;
+    }
+    
+    /* 危険ボタン - 返却・キャンセル用 */
+    .btn-danger {
+      background-color: #dc3545; /* 赤色 */
+    }
+    .btn-danger:hover {
+      background-color: #c82333;
+    }
+    
+    /* --- Book Info Styles --- */
+    .book-info {
+      margin-top: 90px;
+      padding: 60px;
+      border: 3px solid #d4af37;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(245, 241, 232, 0.9) 100%);
+      box-shadow: 0 10px 30px rgba(139, 111, 78, 0.2);
+      position: relative;
+    }
+    
+    .book-info::before {
+      content: "";
+      position: absolute;
+      top: -3px;
+      left: -3px;
+      right: -3px;
+      bottom: -3px;
+      background: linear-gradient(45deg, #d4af37, #8b6f4e, #d4af37);
+      border-radius: 24px;
+      z-index: -1;
+      opacity: 0.5;
+    }
+    
+    .book-info h3 {
+      margin-top: 0;
+      color: #8b6f4e;
+      font-size: 60px;
+      margin-bottom: 60px;
+      border-bottom: 3px solid #d4af37;
+      padding-bottom: 30px;
+      font-family: 'Noto Serif JP', serif;
+      text-align: center;
+    }
+    
+    .book-info img {
+      max-width: 360px;
+      float: right;
+      margin-left: 45px;
+      border: 3px solid #d4af37;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(139, 111, 78, 0.3);
+    }
+    
+    /* --- Message Area --- */
+    .status-message {
+      margin-top: 90px;
+      font-weight: 700;
+      padding: 45px;
+      border-radius: 24px;
+      text-align: center;
+      font-size: 48px;
+      font-family: 'Noto Sans JP', sans-serif;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .status-message:not(:empty) {
+      display: block;
+      background: linear-gradient(135deg, #e2f3ff 0%, #d6ebff 100%);
+      border: 3px solid #b8dffc;
+      color: #0056b3;
+    }
+    
+    .status-message::before {
+      content: "ℹ️";
+      margin-right: 15px;
+      font-size: 54px;
+    }
+    
+    .success {
+      background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%) !important;
+      color: #155724 !important;
+      border: 3px solid #b8dfc4 !important;
+    }
+    
+    .success::before {
+      content: "✅" !important;
+    }
+    
+    .error {
+      background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%) !important;
+      color: #721c24 !important;
+      border: 3px solid #f1b0b7 !important;
+    }
+    
+    .error::before {
+      content: "⚠️" !important;
+    }
+    
+    /* --- Utility Classes --- */
+    .hidden {
+      display: none;
+    }
+    
+    /* --- Responsive Design --- */
+    @media (max-width: 600px) {
+      .container {
+        padding: 30px; /* 3倍に拡大 */
+      }
+      h1 {
+        font-size: 66px; /* 3倍に拡大 */
+        padding-left: 15px; /* 3倍に拡大 */
+        padding-right: 15px; /* 3倍に拡大 */
+      }
+      .form-group {
+        padding-left: 15px; /* 3倍に拡大 */
+        padding-right: 15px; /* 3倍に拡大 */
+      }
+      .status-message {
+        margin-left: 15px; /* 3倍に拡大 */
+        margin-right: 15px; /* 3倍に拡大 */
+        font-size: 45px; /* 3倍に拡大 */
+      }
+      button {
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 30px; /* 3倍に拡大 */
+        padding: 45px; /* 3倍に拡大 */
+        font-size: 48px; /* 3倍に拡大 */
+        min-height: 150px; /* 3倍に拡大 */
+      }
+      .btn-utility, #start-button, #search-button {
+        margin-bottom: 30px; /* 3倍に拡大 */
+        padding: 45px; /* 3倍に拡大 */
+      }
+      button:last-of-type {
+        margin-bottom: 0;
+      }
+      .button-container {
+        flex-direction: column;
+      }
+      .btn-action, #register-button {
+        padding: 45px; /* 3倍に拡大 */
+        font-size: 54px; /* 3倍に拡大 */
+        margin-top: 60px; /* 3倍に拡大 */
+        min-height: 162px; /* 3倍に拡大 */
+      }
+    }
+    
+    /* iPhoneおよびAndroid向けの追加調整 */
+    @media (max-width: 480px) {
+      body, html {
+        font-size: 45px; /* 3倍に拡大 */
+      }
+      input[type="text"] {
+        font-size: 48px; /* 3倍に拡大 */
+        padding: 36px; /* 3倍に拡大 */
+      }
+      button {
+        padding: 36px 45px; /* 3倍に拡大 */
+      }
+      .book-info h2 {
+        font-size: 54px; /* 3倍に拡大 */
+      }
+    }
+    /* --- Menu Button --- */
+    .menu-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5a40 100%);
+      color: white;
+      padding: 30px 60px;
+      font-size: 48px;
+      border: none;
+      border-radius: 24px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 15px;
+      margin: 30px 0;
+      transition: all 0.3s;
+      box-shadow: 0 6px 20px rgba(139, 111, 78, 0.3);
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 700;
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .menu-button::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      transition: left 0.5s;
+    }
+    
+    .menu-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(139, 111, 78, 0.4);
+    }
+    
+    .menu-button:hover::before {
+      left: 100%;
+    }
+    
+    .menu-button-container {
+      text-align: center;
+      margin: 30px 0;
+      position: relative;
+      z-index: 2;
+    }
+  </style>
+</head>
+<body>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
+  <div class="container">
+    <h1>書籍登録システム</h1>
+    
+    <div class="button-container">
+      <button id="start-button">カメラを起動</button>
+    </div>
+    
+    <div id="scanner-container-register" class="scanner-container" style="display: none;">
+      <div class="scanner-header">
+        <button class="camera-switch-btn" onclick="switchCamera('camera-view')">📷 切替</button>
+        <button class="close-scanner-btn" onclick="closeScanner('camera-view')">✕ 閉じる</button>
+      </div>
+      <div id="camera-view" class="scanner-viewport"></div>
+    </div>
+    
+    <div id="manual-input" class="form-group">
+      <label for="isbn-input">ISBN（バーコード）を入力：</label>
+      <input type="text" id="isbn-input" placeholder="例：9784815601607">
+      <div style="text-align: center; margin-top: 30px;">
+        <button id="search-button">検索</button>
+      </div>
+    </div>
+    
+    <div id="book-info" class="book-info hidden">
+      <div id="book-thumbnail"></div>
+      <h3>書籍情報</h3>
+      <div id="book-details">
+        <div class="form-group">
+          <label for="book-id">書籍ID（ISBN）：</label>
+          <input type="text" id="book-id" readonly>
+        </div>
+        <div class="form-group">
+          <label for="book-title">書籍名：</label>
+          <input type="text" id="book-title">
+        </div>
+        <div class="form-group">
+          <label for="book-author">著者名：</label>
+          <input type="text" id="book-author">
+        </div>
+        <div class="form-group">
+          <label for="book-publisher">出版社：</label>
+          <input type="text" id="book-publisher">
+        </div>
+        <div class="form-group">
+          <label for="book-note">備考：</label>
+          <input type="text" id="book-note">
+        </div>
+        <div class="form-group">
+          <label for="book-quantity">登録冊数：</label>
+          <input type="text" id="book-quantity" placeholder="1" value="1">
+        </div>
+      </div>
+      <button id="register-button">書籍を登録</button>
+    </div>
+    
+    <div id="status-message" class="status-message hidden"></div>
+  </div>
+
+  <script>
+    // グローバル変数
+    let quaggaInitialized = false;
+    let lastDetectedCode = null;
+    let currentFacingMode = "environment"; // カメラの向き（environment: アウトカメラ、user: インカメラ）
+    // Web Audio APIを使用したビープ音生成関数
+    function playBeepSound() {
+      try {
+        // Web Audio APIを使用してビープ音を生成
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800; // 800Hzのビープ音
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.1);
+      } catch (e) {
+        console.log('ビープ音の再生をスキップ:', e);
+      }
+    }
+    
+    // DOMが読み込まれたら実行
+    document.addEventListener('DOMContentLoaded', function() {
+      // 要素の取得
+      const startButton = document.getElementById('start-button');
+      const cameraView = document.getElementById('camera-view');
+      const isbnInput = document.getElementById('isbn-input');
+      const searchButton = document.getElementById('search-button');
+      const bookInfo = document.getElementById('book-info');
+      const bookId = document.getElementById('book-id');
+      const bookTitle = document.getElementById('book-title');
+      const bookAuthor = document.getElementById('book-author');
+      const bookPublisher = document.getElementById('book-publisher');
+      const bookNote = document.getElementById('book-note');
+      const bookThumbnail = document.getElementById('book-thumbnail');
+      const registerButton = document.getElementById('register-button');
+      const statusMessage = document.getElementById('status-message');
+      
+      // カメラ起動ボタンのイベントリスナー
+      startButton.addEventListener('click', function() {
+        const container = document.getElementById('scanner-container-register');
+        container.style.display = 'flex';
+        initQuagga();
+        startButton.disabled = true;
+      });
+      
+      
+      // closeScanner関数をグローバルに定義
+      window.closeScanner = function(viewportId) {
+        const container = document.getElementById('scanner-container-register');
+        container.style.display = 'none';
+        stopQuagga();
+        startButton.disabled = false;
+      };
+      
+      // 検索ボタンのイベントリスナー
+      searchButton.addEventListener('click', function() {
+        const isbn = isbnInput.value.trim();
+        if (isbn) {
+          fetchBookInfo(isbn);
+        } else {
+          showStatusMessage('ISBNを入力してください', 'error');
+        }
+      });
+      
+      // ISBNフィールドでEnterキーを押したときの処理
+      isbnInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+          const isbn = isbnInput.value.trim();
+          if (isbn) {
+            fetchBookInfo(isbn);
+          } else {
+            showStatusMessage('ISBNを入力してください', 'error');
+          }
+        }
+      });
+      
+      // 登録ボタンのイベントリスナー
+      registerButton.addEventListener('click', function() {
+        registerBook();
+      });
+      
+      // Quaggaの初期化
+      function initQuagga() {
+        if (quaggaInitialized) return;
+        
+        // 既存のQuaggaインスタンスを停止
+        if (typeof Quagga !== 'undefined' && Quagga._handler) {
+          try {
+            // イベントハンドラーをクリア
+            Quagga.offProcessed();
+            Quagga.offDetected();
+            Quagga.stop();
+          } catch (e) {
+            console.log('Quagga cleanup エラー（無視可能）:', e);
+          }
+        }
+        
+        // ビューポートを完全にクリア
+        const viewport = document.getElementById('camera-view');
+        if (viewport) {
+          viewport.innerHTML = '';
+        }
+
+        // Quaggaが生成した可能性のある要素をグローバルに削除
+        document.querySelectorAll('.drawingBuffer').forEach(el => el.remove());
+        
+        // 初期化を遅延実行
+        setTimeout(() => {
+          initializeScanner();
+        }, 300); // スマホでは少し長めに待機
+      }
+      
+      function initializeScanner() {
+        // 既存のリスナーを解除
+        if (typeof Quagga !== 'undefined') {
+          Quagga.offDetected(null);
+          Quagga.offProcessed(null);
+        }
+        
+        // デバイス判定
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        Quagga.init({
+          inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: document.querySelector('#camera-view'),
+            constraints: {
+              width: { min: 640, ideal: isMobile ? 1280 : 1920, max: 1920 },
+              height: { min: 480, ideal: isMobile ? 720 : 1080, max: 1080 },
+              facingMode: currentFacingMode,
+              aspectRatio: isMobile ? { ideal: 16/9 } : undefined
+            },
+            area: isMobile ? { top: "0%", right: "0%", left: "0%", bottom: "0%" } : undefined
+          },
+          locator: {
+            patchSize: isMobile ? "large" : "medium",
+            halfSample: !isMobile
+          },
+          numOfWorkers: isMobile ? 2 : 4,
+          frequency: isMobile ? 5 : 10,
+          decoder: {
+            readers: [
+              'code_128_reader',
+              'code_39_reader',
+              'ean_reader',
+              'ean_8_reader',
+              'code_93_reader'
+            ],
+            debug: { 
+              drawBoundingBox: true, 
+              showFrequency: true, 
+              drawScanline: true, 
+              showPattern: true 
+            },
+            multiple: false,
+            tryHarder: true
+          },
+          locate: true
+        }, function(err) {
+          if (err) {
+            console.error("Quagga.init Error:", err);
+            showStatusMessage(`スキャナーの初期化に失敗: ${err.name} - ${err.message}. カメラへのアクセスを許可してください。`, 'error');
+            closeScanner('camera-view');
+            return;
+          }
+          console.log("スキャナーの初期化完了。スキャンを開始します。");
+          Quagga.start();
+          
+          // onProcessedコールバックを削除してオーバーレイを非表示
+          
+          // 重複防止のためのタイムスタンプと前回のコード
+          let lastDetectedTime = 0;
+          let lastDetectedCode = null;
+          const COOLDOWN_PERIOD = 3000; // 同じコードを再検出するまでの待機時間（ミリ秒）
+          
+          Quagga.onDetected(function(result) {
+            // スキャナーが停止している場合は処理しない
+            if (!quaggaInitialized) {
+              console.log("スキャナーは既に停止しています。イベントを無視します。");
+              return;
+            }
+            
+            const code = result.codeResult.code;
+            const currentTime = new Date().getTime();
+            console.log("バーコード検出:", code, "信頼度:", result.codeResult.confidence);
+            
+            // 信頼度が低い場合はスキップ
+            if (result.codeResult.confidence < 0.5) {
+              console.log("信頼度が低いため無視します:", result.codeResult.confidence);
+              return;
+            }
+            
+            // 前回と同じコードで、クールダウン期間内の場合はスキップ
+            if (code === lastDetectedCode && (currentTime - lastDetectedTime) < COOLDOWN_PERIOD) {
+              console.log(`同じコードが短時間で検出されました。無視します。経過時間: ${currentTime - lastDetectedTime}ms`);
+              return;
+            }
+            
+            // 新しいコードとして処理
+            lastDetectedCode = code;
+            lastDetectedTime = currentTime;
+            
+            // ビープ音を再生
+            playBeepSound();
+            
+            // スキャン成功したらスキャナーを閉じる
+            closeScanner('camera-view');
+            
+            isbnInput.value = code;
+            showStatusMessage(`ISBN「${code}」を読み取りました。`, "");
+            fetchBookInfo(code);
+          });
+        });
+        
+        quaggaInitialized = true;
+      }
+      
+      // スキャナーを停止する関数
+      function stopQuagga() {
+        // Quaggaが初期化されているかチェック
+        if (typeof Quagga !== 'undefined' && Quagga._handler && Quagga._handler.inputStream) {
+          try {
+            // イベントハンドラーをクリア
+            Quagga.offProcessed();
+            Quagga.offDetected();
+            Quagga.stop();
+          } catch (e) {
+            console.log('Quagga.stop() エラー（無視可能）:', e);
+          }
+        }
+        
+        // ビューポートを完全にクリア
+        const viewport = document.getElementById('camera-view');
+        if (viewport) {
+          // すべての子要素を強制的に削除
+          while (viewport.firstChild) {
+            viewport.removeChild(viewport.firstChild);
+          }
+          
+          // インラインスタイルを完全にリセット
+          viewport.removeAttribute('style');
+          
+          // Quaggaが生成した可能性のある要素をグローバルに検索して削除
+          document.querySelectorAll('.drawingBuffer').forEach(el => el.remove());
+        }
+        
+        // スキャナーコンテナ内のすべてのcanvas要素を削除
+        const container = document.getElementById('scanner-container-register');
+        if (container) {
+          container.querySelectorAll('canvas').forEach(el => el.remove());
+          container.querySelectorAll('video').forEach(el => el.remove());
+        }
+        
+        console.log("スキャナー停止処理完了");
+        quaggaInitialized = false;
+      }
+      
+      
+      // 書籍情報の取得
+      function fetchBookInfo(isbn) {
+        showStatusMessage('書籍情報を検索中...', '');
+        
+        // Google Books APIを使用して書籍情報を取得
+        google.script.run
+          .withSuccessHandler(function(bookInfo) {
+            if (bookInfo && !bookInfo.error) {
+              displayBookInfo(bookInfo);
+              showStatusMessage('書籍情報を取得しました', 'success');
+            } else {
+              showStatusMessage('書籍情報が見つかりませんでした: ' + (bookInfo ? bookInfo.error : '不明なエラー'), 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showStatusMessage('エラーが発生しました: ' + error.message, 'error');
+          })
+          .fetchBookInfo(isbn);
+      }
+      
+      // 書籍情報の表示
+      function displayBookInfo(bookInfo) {
+        bookId.value = bookInfo.isbn || '';
+        bookTitle.value = bookInfo.title || '';
+        bookAuthor.value = bookInfo.authors || '';
+        bookPublisher.value = bookInfo.publisher || '';
+        
+        // サムネイル画像の表示
+        if (bookInfo.thumbnail) {
+          bookThumbnail.innerHTML = `<img src="${bookInfo.thumbnail}" alt="${bookInfo.title}">`;
+        } else {
+          bookThumbnail.innerHTML = '';
+        }
+        
+        // 書籍情報セクションを表示
+        document.getElementById('book-info').classList.remove('hidden');
+      }
+      
+      // 書籍の登録
+      function registerBook() {
+        const bookQuantity = document.getElementById('book-quantity');
+        const bookData = {
+          isbn: bookId.value,
+          title: bookTitle.value,
+          author: bookAuthor.value,
+          publisher: bookPublisher.value,
+          note: bookNote.value,
+          quantity: bookQuantity.value || '1'
+        };
+        
+        // 必須項目のチェック
+        if (!bookData.isbn || !bookData.title) {
+          showStatusMessage('書籍IDと書籍名は必須です', 'error');
+          return;
+        }
+        
+        // 登録冊数の検証
+        const quantity = parseInt(bookData.quantity);
+        if (isNaN(quantity) || quantity < 1 || quantity > 100) {
+          showStatusMessage('登録冊数は1〜100の間で入力してください', 'error');
+          return;
+        }
+        
+        showStatusMessage('書籍を登録中...', '');
+        
+        // サーバーサイドの関数を呼び出して書籍を登録
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              showStatusMessage(result.message, 'success');
+              // フォームをリセット
+              resetForm();
+            } else {
+              showStatusMessage('登録に失敗しました: ' + result.message, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            showStatusMessage('エラーが発生しました: ' + error.message, 'error');
+          })
+          .registerBook(bookData);
+      }
+      
+      // フォームのリセット
+      function resetForm() {
+        isbnInput.value = '';
+        bookId.value = '';
+        bookTitle.value = '';
+        bookAuthor.value = '';
+        bookPublisher.value = '';
+        bookNote.value = '';
+        document.getElementById('book-quantity').value = '1';
+        bookThumbnail.innerHTML = '';
+        bookInfo.classList.add('hidden');
+        lastDetectedCode = null;
+      }
+      
+      // ステータスメッセージの表示
+      function showStatusMessage(message, type) {
+        statusMessage.textContent = message;
+        statusMessage.className = 'status-message';
+        if (type) {
+          statusMessage.classList.add(type);
+        }
+        statusMessage.classList.remove('hidden');
+        
+        // 成功メッセージは3秒後に消える
+        if (type === 'success') {
+          setTimeout(function() {
+            statusMessage.classList.add('hidden');
+          }, 3000);
+        }
+      }
+
+      // カメラ切り替え関数
+      window.switchCamera = function(viewportId) {
+        // カメラの向きを切り替え
+        currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+        
+        // 現在のスキャナーを停止
+        stopQuagga();
+        const container = document.getElementById('scanner-container-register');
+        container.style.display = 'none';
+        
+        // ボタンの状態を元に戻す
+        startButton.disabled = false;
+        
+        // 新しいカメラ設定でスキャナーを再起動
+        setTimeout(() => {
+          container.style.display = 'flex';
+          initQuagga();
+          startButton.disabled = true;
+          }, 300);
+      };
+    });
+  </script>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+  <script>
+    // メニューボタンのURLを設定（高速化版）
+    (function() {
+      // URLをキャッシュ
+      let cachedUrl = sessionStorage.getItem('webAppUrl');
+      
+      if (cachedUrl) {
+        // キャッシュがあれば即座に設定
+        document.getElementById('menu-button-top').href = cachedUrl;
+        document.getElementById('menu-button-bottom').href = cachedUrl;
+      } else {
+        // キャッシュがない場合は取得してキャッシュに保存
+        google.script.run.withSuccessHandler(function(url) {
+          sessionStorage.setItem('webAppUrl', url);
+          document.getElementById('menu-button-top').href = url;
+          document.getElementById('menu-button-bottom').href = url;
+        }).getWebAppUrl();
+      }
+    })();
+    
+    // ブラウザの戻るボタンを無効化
+    window.history.pushState(null, null, window.location.href);
+    window.addEventListener('popstate', function(event) {
+      window.history.pushState(null, null, window.location.href);
+    });
+  </script>
+</body>
+</html>

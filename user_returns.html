@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <title>利用者別返却システム</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+
+      /* --- General Styles --- */
+      body {
+        font-family: 'Noto Sans JP', sans-serif;
+        background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
+        color: #2c3e50;
+        margin: 0;
+        padding: 0;
+        line-height: 1.7;
+        font-size: 48px;
+        -webkit-text-size-adjust: 100%;
+        min-height: 100vh;
+        position: relative;
+      }
+      
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: 
+          repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 35px,
+            rgba(139, 111, 78, 0.03) 35px,
+            rgba(139, 111, 78, 0.03) 70px
+          );
+        pointer-events: none;
+        z-index: 1;
+      }
+      .container {
+        position: relative;
+        z-index: 2;
+        margin: 0;
+        padding: 45px;
+        background-color: rgba(255, 255, 255, 0.95);
+        width: 100%;
+        min-height: 100vh;
+        box-sizing: border-box;
+        box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #8b6f4e;
+        margin-top: 0;
+        text-align: center;
+        margin-bottom: 90px;
+        border-bottom: 6px solid #d4af37;
+        padding-bottom: 60px;
+        font-size: 72px;
+        font-family: 'Noto Serif JP', serif;
+        font-weight: 700;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        position: relative;
+      }
+      
+      h1::before {
+        content: "👤";
+        display: block;
+        font-size: 48px;
+        margin-bottom: 20px;
+      }
+      h2 {
+          margin-top: 120px;
+          text-align: left;
+          border-bottom: none;
+          font-size: 60px;
+          color: #8b6f4e;
+          padding-left: 30px;
+          padding-right: 30px;
+          font-family: 'Noto Serif JP', serif;
+          font-weight: 700;
+      }
+
+      /* --- Form Styles --- */
+      .form-group {
+        margin-bottom: 90px;
+        background: rgba(255, 255, 255, 0.7);
+        padding: 45px;
+        border-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      }
+      label {
+        display: block;
+        margin-bottom: 45px;
+        font-weight: 700;
+        color: #8b6f4e;
+        font-size: 54px;
+        font-family: 'Noto Serif JP', serif;
+        position: relative;
+        padding-left: 60px;
+      }
+      
+      label::before {
+        content: "▸";
+        position: absolute;
+        left: 0;
+        color: #d4af37;
+        font-size: 48px;
+      }
+      input[type="text"], input[type="number"] {
+        width: 100%;
+        padding: 45px;
+        border: 3px solid #d4af37;
+        border-radius: 15px;
+        box-sizing: border-box;
+        font-size: 48px;
+        font-family: 'Noto Sans JP', sans-serif;
+        -webkit-appearance: none;
+        appearance: none;
+        background: rgba(255, 255, 255, 0.9);
+        transition: all 0.3s ease;
+      }
+      
+      input[type="text"]:focus, input[type="number"]:focus {
+        outline: none;
+        border-color: #8b6f4e;
+        box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.2);
+      }
+      input[readonly] {
+        background-color: #f8f5f0;
+        cursor: not-allowed;
+        border-color: #ddd;
+      }
+      /* カメラ切り替えボタン */
+      .camera-switch-btn {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        font-size: 36px;
+        border-radius: 10px;
+        cursor: pointer;
+        margin-right: 20px;
+      }
+
+      .camera-switch-btn:hover {
+        background-color: #0056b3;
+      }
+      
+      /* 基本ボタンスタイル */
+      button {
+        color: white;
+        padding: 45px 60px;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        font-size: 48px;
+        font-weight: 700;
+        transition: all 0.3s ease;
+        margin-top: 45px;
+        font-family: 'Noto Sans JP', sans-serif;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+        min-height: 132px;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+        background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      }
+      
+      button::before {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+        transform: scale(0);
+        transition: transform 0.5s ease;
+      }
+      
+      button:hover::before {
+        transform: scale(1);
+      }
+      
+      button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+      }
+      button:disabled {
+        background: linear-gradient(135deg, #cccccc 0%, #999999 100%);
+        color: #666666;
+        cursor: not-allowed;
+        opacity: 0.7;
+        box-shadow: none;
+      }
+      /* スキャンボタン */
+      #scan-user-id-button { 
+         padding: 36px 60px;
+         background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+         margin-right: 30px;
+         font-size: 48px;
+         font-weight: 400;
+      }
+      #scan-user-id-button:hover { 
+         background: linear-gradient(135deg, #495057 0%, #343a40 100%);
+      }
+      /* 検索ボタン */
+      button[onclick="searchUserRentals()"] {
+          margin-top: 60px;
+          font-weight: 700;
+          padding: 45px 60px;
+          font-size: 54px;
+          width: 100%;
+          min-height: 150px;
+          background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+          position: relative;
+      }
+      
+      button[onclick="searchUserRentals()"]::after {
+        content: "🔍";
+        position: absolute;
+        right: 60px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 60px;
+      }
+      
+      button[onclick="searchUserRentals()"]:hover {
+          background: linear-gradient(135deg, #b8941f 0%, #9a7a19 100%);
+      }
+      /* 検索ボタン */
+      #search-user-button {
+        background: linear-gradient(135deg, #4e7b8b 0%, #405d6d 100%);
+      }
+      #search-user-button:hover {
+        background: linear-gradient(135deg, #405d6d 0%, #334a56 100%);
+      }
+      
+      /* チェックボックス */
+      .book-checkbox {
+          width: 84px; /* 3倍に拡大 */
+          height: 84px; /* 3倍に拡大 */
+          cursor: pointer;
+      }
+      
+      /* まとめて返却ボタン */
+      #bulk-return-button {
+          background: linear-gradient(135deg, #8b5a4e 0%, #6d4640 100%);
+          padding: 45px 60px;
+          font-size: 54px;
+          margin-top: 75px;
+          display: block;
+          width: 100%;
+          min-height: 150px;
+          position: relative;
+      }
+      
+      #bulk-return-button::after {
+        content: "📚";
+        position: absolute;
+        right: 60px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 60px;
+      }
+      
+      #bulk-return-button:hover {
+          background: linear-gradient(135deg, #6d4640 0%, #5a3a35 100%);
+      }
+      #bulk-return-button:disabled {
+          background: linear-gradient(135deg, #cccccc 0%, #999999 100%);
+          cursor: not-allowed;
+      }
+
+      /* --- Scanner Container --- */
+      /* スキャナーコンテナ */
+      .scanner-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #000;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+
+      /* スキャナーヘッダー */
+      .scanner-header {
+        position: absolute;
+        top: 0;
+        right: 0;
+        padding: 20px;
+        z-index: 1002;
+      }
+
+      .close-scanner-btn {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        font-size: 36px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+
+      /* スキャナービューポート */
+      .scanner-viewport {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: #000;
+      }
+
+      /* Quaggaの要素を制御 */
+      .scanner-viewport canvas,
+      .scanner-viewport video {
+        position: absolute !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        object-fit: cover !important;
+      }
+
+      /* 不要な要素を完全に削除 */
+      .scanner-viewport br,
+      .scanner-viewport .drawingBuffer,
+      .scanner-viewport canvas:not(:last-child) {
+        display: none !important;
+      }
+
+      /* スマホ対応 */
+      @media (max-width: 768px) {
+        .scanner-viewport {
+          width: 100%;
+          height: 100%;
+        }
+        
+        .close-scanner-btn {
+          font-size: 24px;
+          padding: 10px 20px;
+        }
+      }
+
+
+      /* --- Results Area --- */
+      #rental-records {
+        margin-top: 90px; /* 3倍に拡大 */
+      }
+      #records-container {
+          overflow-x: auto; /* テーブルがはみ出す場合にスクロール */
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 60px; /* テーブル上のスペースを3倍に拡大 */
+        font-size: 48px; /* テーブル文字サイズを3倍に拡大 */
+      }
+      th, td {
+        padding: 45px; /* セルのパディングを3倍に拡大 */
+        text-align: left;
+        border-bottom: 3px solid #d0d0d0; /* 線を3倍に拡大 */
+      }
+      th {
+        background-color: #f8f5f0;
+        color: #8b6f4e;
+        font-weight: 700;
+        white-space: nowrap;
+        font-family: 'Noto Serif JP', serif;
+      }
+      tr:nth-child(even) {
+          background-color: #f8f9fa; /* 交互に背景色 */
+      }
+      tr:hover {
+        background-color: #f5f1e8;
+      }
+      .no-records {
+        font-style: italic;
+        color: #666;
+        text-align: center;
+        padding: 75px; /* パディングを3倍に拡大 */
+        font-size: 3.3em; /* 3倍に拡大 */
+      }
+
+      /* --- Message Area --- */
+      #message {
+        margin-top: 90px;
+        font-weight: 700;
+        padding: 45px;
+        border-radius: 20px;
+        text-align: center;
+        font-size: 48px;
+        position: relative;
+        overflow: hidden;
+      }
+      /* メッセージの種類に応じてスタイルを変える（例） */
+      #message:not(:empty) {
+         display: block;
+         background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
+         border: 3px solid #b8dffc;
+         color: #0056b3;
+         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      /* --- Responsive Design --- */
+      @media (max-width: 768px) { /* テーブルがあるのでブレークポイント調整 */
+        th, td {
+            padding: 45px 36px; /* スマホではテーブルパディングを3倍に拡大 */
+            font-size: 3.6em; /* スマホではテーブル文字サイズを3倍に拡大 */
+        }
+        
+        /* テーブルのレスポンシブ対応を強化 */
+        table, thead, tbody, th, td, tr {
+            display: block;
+        }
+        
+        /* ヘッダーを非表示 */
+        thead tr {
+            position: absolute;
+            top: -9999px;
+            left: -9999px;
+        }
+        
+        tr {
+            margin-bottom: 45px; /* 3倍に拡大 */
+            border: 3px solid #ccc; /* 3倍に拡大 */
+            border-radius: 24px; /* 角丸を3倍に拡大 */
+            background-color: #fff;
+        }
+        
+        td {
+            /* tdをブロック要素として表示し、各セルの前にラベルを表示 */
+            position: relative;
+            padding-left: 50%;
+            border: none;
+            border-bottom: 3px solid #eee; /* 3倍に拡大 */
+        }
+        
+        td:before {
+            /* ラベルとして使用するコンテンツ */
+            position: absolute;
+            top: 45px; /* 3倍に拡大 */
+            left: 45px; /* 3倍に拡大 */
+            width: 45%;
+            padding-right: 30px; /* 3倍に拡大 */
+            white-space: nowrap;
+            font-weight: bold;
+        }
+        
+        /* 各セルのラベル */
+        td:nth-of-type(1):before { content: "選択"; }
+        td:nth-of-type(2):before { content: "書籍ID"; }
+        td:nth-of-type(3):before { content: "書籍名"; }
+        td:nth-of-type(4):before { content: "貸出日時"; }
+        td:nth-of-type(5):before { content: "返却予定日"; }
+      }
+      
+      @media (max-width: 600px) {
+         .container {
+             padding: 30px; /* スマホではコンテナ内パディングを3倍に拡大 */
+         }
+        h1 {
+          font-size: 66px; /* 3倍に拡大 */
+          padding-left: 15px; /* 3倍に拡大 */
+          padding-right: 15px; /* 3倍に拡大 */
+        }
+        .form-group {
+            padding-left: 15px; /* 3倍に拡大 */
+            padding-right: 15px; /* 3倍に拡大 */
+        }
+        #rental-records {
+             padding-left: 15px; /* 3倍に拡大 */
+             padding-right: 15px; /* 3倍に拡大 */
+        }
+        #message {
+            margin-left: 15px; /* 3倍に拡大 */
+            margin-right: 15px; /* 3倍に拡大 */
+            font-size: 45px; /* 3倍に拡大 */
+        }
+        button {
+          width: 100%; /* 小画面ではボタン幅を100%に */
+          margin-right: 0;
+          margin-bottom: 30px; /* ボタン間の縦スペースを3倍に拡大 */
+          padding: 45px; /* 3倍に拡大 */
+          font-size: 48px; /* 3倍に拡大 */
+          min-height: 150px; /* タッチターゲットを3倍に拡大 */
+        }
+        #scan-user-id-button { 
+             margin-bottom: 30px; /* スキャンボタン下のスペースを3倍に拡大 */
+             padding: 45px; /* 3倍に拡大 */
+        }
+        button:last-of-type {
+             margin-bottom: 0;
+        }
+        
+        /* チェックボックスをさらに大きく */
+        .book-checkbox {
+            width: 90px; /* 3倍に拡大 */
+            height: 90px; /* 3倍に拡大 */
+        }
+      }
+      
+      /* iPhoneおよびAndroid向けの追加調整 */
+      @media (max-width: 480px) {
+        body, html {
+          font-size: 45px; /* 3倍に拡大 */
+        }
+        input[type="text"], input[type="number"] {
+          font-size: 48px; /* 3倍に拡大 */
+          padding: 36px; /* 3倍に拡大 */
+        }
+        .no-records {
+          font-size: 45px; /* 3倍に拡大 */
+          padding: 60px; /* 3倍に拡大 */
+        }
+      }
+      /* --- Menu Button --- */
+      .menu-button {
+        background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+        color: white;
+        padding: 30px 60px;
+        font-size: 48px;
+        border: none;
+        border-radius: 50px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 15px;
+        margin: 30px 0;
+        transition: all 0.3s;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        font-weight: 700;
+      }
+      .menu-button:hover {
+        background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+      }
+      .menu-button-container {
+        text-align: center;
+        margin: 30px 0;
+        position: relative;
+        z-index: 2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
+    <div class="container">
+      <h1>利用者別返却</h1>
+
+      <div class="form-group">
+        <label for="user-id">利用者ID</label>
+        <button id="scan-user-id-button">利用者IDをスキャン</button>
+        <input type="text" id="user-id" name="userId" placeholder="スキャンするか手入力してください">
+        <div id="scanner-container-user-returns" class="scanner-container" style="display: none;">
+          <div class="scanner-header">
+            <button class="camera-switch-btn" onclick="switchCamera('interactive')">📷 切替</button>
+            <button class="close-scanner-btn" onclick="closeScanner('interactive')">✕ 閉じる</button>
+          </div>
+          <div id="interactive" class="scanner-viewport"></div>
+        </div>
+      </div>
+
+      <button onclick="searchUserRentals()">検索</button>
+      <p id="message"></p>
+
+      <div id="rental-records" style="display: none;">
+        <h2>未返却一覧</h2>
+        <div id="records-container"></div>
+      </div>
+    </div>
+
+    <!-- バーコード読み取りライブラリ (QuaggaJSを使用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <script>
+      let isScanning = false;
+      let currentUserName = '';
+      let currentFacingMode = "environment"; // カメラの向き（environment: アウトカメラ、user: インカメラ）
+      // Web Audio APIを使用したビープ音生成関数
+      function playBeepSound() {
+        try {
+          // Web Audio APIを使用してビープ音を生成
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          oscillator.frequency.value = 800; // 800Hzのビープ音
+          oscillator.type = 'sine';
+          
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+          
+          oscillator.start(audioContext.currentTime);
+          oscillator.stop(audioContext.currentTime + 0.1);
+        } catch (e) {
+          console.log('ビープ音の再生をスキップ:', e);
+        }
+      }
+
+      // ページ読み込み完了時の処理
+      window.onload = function() {
+        // イベントリスナー設定
+      };
+
+      // スキャンボタンの処理
+      document.getElementById('scan-user-id-button').addEventListener('click', () => {
+        toggleScanner('interactive', 'user-id');
+      });
+
+      // スキャナーの表示/非表示を切り替える関数
+      function toggleScanner(viewportId, inputFieldId) {
+        const containerId = 'scanner-container-user-returns';
+        const container = document.getElementById(containerId);
+        
+        if (container.style.display === 'none') {
+          container.style.display = 'flex';
+          startScanner(viewportId, inputFieldId);
+        } else {
+          closeScanner(viewportId);
+        }
+      }
+
+      function closeScanner(viewportId) {
+        const containerId = 'scanner-container-user-returns';
+        const container = document.getElementById(containerId);
+        container.style.display = 'none';
+        stopScanner(viewportId);
+      }
+
+      function startScanner(targetElementId, inputFieldId) {
+        setMessage("カメラを起動しています...");
+        
+        // 既存のQuaggaインスタンスを停止
+        if (typeof Quagga !== 'undefined' && Quagga._handler) {
+          Quagga.stop();
+        }
+        
+        // ビューポートを完全にクリア
+        const viewport = document.getElementById(targetElementId);
+        if (viewport) {
+          viewport.innerHTML = '';
+        }
+
+        // Quaggaが生成した可能性のある要素をグローバルに削除
+        document.querySelectorAll('.drawingBuffer').forEach(el => el.remove());
+        
+        isScanning = true;
+        
+        // 初期化を遅延実行
+        setTimeout(() => {
+          initializeScanner(targetElementId, inputFieldId);
+        }, 300); // スマホでは少し長めに待機
+      }
+      
+      function initializeScanner(targetElementId, inputFieldId) {
+        // デバイス判定
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        Quagga.init({
+          inputStream : {
+            name : "Live",
+            type : "LiveStream",
+            target: document.querySelector(`#${targetElementId}`),
+            constraints: {
+              width: { min: 640, ideal: isMobile ? 1280 : 1920, max: 1920 },
+              height: { min: 480, ideal: isMobile ? 720 : 1080, max: 1080 },
+              facingMode: currentFacingMode,
+              aspectRatio: isMobile ? { ideal: 16/9 } : undefined
+            },
+            area: isMobile ? { top: "0%", right: "0%", left: "0%", bottom: "0%" } : undefined
+          },
+          locator: {
+            patchSize: isMobile ? "large" : "medium",
+            halfSample: !isMobile
+          },
+          numOfWorkers: isMobile ? 2 : 4,
+          frequency: isMobile ? 5 : 10,
+          decoder : { 
+            readers : [          // 複数のバーコードリーダーを有効化
+              'code_128_reader',
+              'code_39_reader',
+              'ean_reader',
+              'ean_8_reader',
+              'code_93_reader'
+            ],
+            debug: {
+              drawBoundingBox: true,
+              showFrequency: true,
+              drawScanline: true,
+              showPattern: true
+            },
+            multiple: false,     // 複数のバーコードを同時に読み取らない
+            tryHarder: true      // より積極的にスキャンを試みる
+          },
+          locate: true
+        }, function(err) {
+            if (err) {
+                console.error(err);
+                setMessage(`スキャナーの初期化に失敗: ${err.name}. カメラへのアクセスを許可してください。`);
+                document.getElementById(targetElementId).style.display = 'none';
+                isScanning = false;
+                return;
+            }
+            console.log("スキャナー初期化完了");
+            setMessage("バーコードをカメラに向けてください。");
+            Quagga.start();
+        });
+
+        // onProcessedコールバックを削除してオーバーレイを非表示
+
+        // 重複防止のためのタイムスタンプと前回のコード
+        let lastDetectedTime = 0;
+        let lastDetectedCode = null;
+        const COOLDOWN_PERIOD = 3000; // 同じコードを再検出するまでの待機時間（ミリ秒）
+        
+        Quagga.onDetected(function(result) {
+          // スキャナーが停止している場合は処理しない
+          if (!isScanning) {
+            console.log("スキャナーは既に停止しています。イベントを無視します。");
+            return;
+          }
+          
+          const code = result.codeResult.code;
+          const currentTime = new Date().getTime();
+          console.log("バーコード検出:", code, "信頼度:", result.codeResult.confidence);
+          
+          // 信頼度が低い場合はスキップ（閾値を下げて検出率向上）
+          if (result.codeResult.confidence < 0.5) {
+            console.log("信頼度が低いため無視します:", result.codeResult.confidence);
+            return;
+          }
+          
+          // 前回と同じコードで、クールダウン期間内の場合はスキップ
+          if (code === lastDetectedCode && (currentTime - lastDetectedTime) < COOLDOWN_PERIOD) {
+            console.log(`同じコードが短時間で検出されました。無視します。経過時間: ${currentTime - lastDetectedTime}ms`);
+            return;
+          }
+          
+          // 新しいコードとして処理
+          lastDetectedCode = code;
+          lastDetectedTime = currentTime;
+          
+          document.getElementById(inputFieldId).value = code;
+          setMessage(`コード「${code}」を読み取りました。`);
+          
+          // ビープ音を再生
+          playBeepSound();
+          
+          closeScanner(targetElementId);
+          searchUserRentals(); // 利用者IDが読み取れたら自動的に検索
+        });
+      }
+
+      function stopScanner(viewportId) {
+        // Quaggaが初期化されているかチェック
+        if (typeof Quagga !== 'undefined' && Quagga._handler && Quagga._handler.inputStream) {
+          try {
+            // イベントハンドラーをクリア
+            Quagga.offProcessed();
+            Quagga.offDetected();
+            Quagga.stop();
+          } catch (e) {
+            console.log('Quagga.stop() エラー（無視可能）:', e);
+          }
+        }
+        
+        // ビューポートを完全にクリア
+        const viewport = document.getElementById(viewportId);
+        if (viewport) {
+          // すべての子要素を強制的に削除
+          while (viewport.firstChild) {
+            viewport.removeChild(viewport.firstChild);
+          }
+          
+          // インラインスタイルを完全にリセット
+          viewport.removeAttribute('style');
+          
+          // Quaggaが生成した可能性のある要素をグローバルに検索して削除
+          document.querySelectorAll('.drawingBuffer').forEach(el => el.remove());
+        }
+        
+        // スキャナーコンテナ内のすべてのcanvas要素を削除
+        const container = document.getElementById('scanner-container-user-returns');
+        if (container) {
+          container.querySelectorAll('canvas').forEach(el => el.remove());
+          container.querySelectorAll('video').forEach(el => el.remove());
+        }
+        
+        // スキャン状態をリセット
+        isScanning = false;
+      }
+
+      // 利用者の未返却一覧を検索する関数
+      function searchUserRentals() {
+        const userId = document.getElementById('user-id').value.trim();
+        if (!userId) {
+          setMessage("利用者IDを入力またはスキャンしてください。");
+          return;
+        }
+
+        setMessage("利用者情報と未返却一覧を検索中...");
+        document.getElementById('rental-records').style.display = 'none';
+        document.getElementById('records-container').innerHTML = '';
+        
+        // まず利用者情報を取得
+        google.script.run
+          .withSuccessHandler((userInfo) => {
+            if (userInfo && userInfo.name) {
+              currentUserName = userInfo.name;
+              // 利用者情報が見つかったら、未返却一覧を検索
+              fetchUnreturnedBooks(userId);
+            } else {
+              setMessage("利用者情報が見つかりませんでした。利用者IDを確認してください。");
+            }
+          })
+          .withFailureHandler((error) => {
+            setMessage(`利用者情報の取得エラー: ${error.message}`);
+            console.error("利用者情報取得エラー:", error);
+          })
+          .getUserInfo(userId);
+      }
+
+      // 未返却一覧を取得する関数
+      function fetchUnreturnedBooks(userId) {
+        // サーバーサイドで未返却一覧を取得する関数を呼び出す
+        google.script.run
+          .withSuccessHandler((result) => {
+            console.log("検索結果:", result);
+            
+            if (result && result.records && result.records.length > 0) {
+              // 未返却の本だけをフィルタリング
+              const unreturnedBooks = result.records.filter(record => record.status === "未返却");
+              
+              if (unreturnedBooks.length > 0) {
+                displayRentalRecords(unreturnedBooks);
+                setMessage(`${currentUserName} さんの未返却本が ${unreturnedBooks.length} 件見つかりました。`);
+              } else {
+                // 返却処理後の再検索かどうかをチェック
+                const previousMessage = document.getElementById('message').innerText;
+                if (previousMessage.includes("返却処理中") || previousMessage.includes("残りの貸出本を検索中")) {
+                  setMessage(`✅ すべて返却完了！ ${currentUserName} さんの未返却本はありません。`);
+                  document.getElementById('rental-records').style.display = 'block';
+                  document.getElementById('records-container').innerHTML = `
+                    <div style="text-align: center; padding: 60px; background: linear-gradient(135deg, #d4edda 0%, #c8e6cc 100%); border-radius: 20px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);">
+                      <p style="font-size: 96px; margin: 0;">🎉</p>
+                      <p class="no-records" style="color: #155724; font-weight: bold; font-size: 54px; margin: 30px 0;">
+                        ${currentUserName} さん<br>
+                        すべての本が返却されました！
+                      </p>
+                      <p style="color: #155724; font-size: 42px;">ご利用ありがとうございました</p>
+                    </div>
+                  `;
+                } else {
+                  setMessage(`${currentUserName} さんの未返却本はありません。`);
+                  document.getElementById('rental-records').style.display = 'block';
+                  document.getElementById('records-container').innerHTML = '<p class="no-records">未返却の本はありません。</p>';
+                }
+              }
+            } else {
+              setMessage(`${currentUserName} さんの貸出記録が見つかりませんでした。`);
+              document.getElementById('rental-records').style.display = 'block';
+              document.getElementById('records-container').innerHTML = '<p class="no-records">該当する貸出記録はありません。</p>';
+            }
+          })
+          .withFailureHandler((error) => {
+            setMessage(`貸出記録の検索エラー: ${error.message}`);
+            console.error("貸出記録検索エラー:", error);
+            document.getElementById('rental-records').style.display = 'block';
+            document.getElementById('records-container').innerHTML = '<p class="no-records">検索中にエラーが発生しました。</p>';
+          })
+          .getUserRentals(userId);
+      }
+
+      // 選択された書籍IDを保持する配列
+      let selectedBookIds = [];
+      
+      // 貸出記録を表示する関数
+      function displayRentalRecords(records) {
+        console.log("表示する貸出記録:", records);
+        
+        const container = document.getElementById('records-container');
+        selectedBookIds = []; // 選択リストをリセット
+        
+        // テーブルを作成
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="select-all-checkbox" onclick="toggleAllCheckboxes()"></th>
+                <th>書籍ID</th>
+                <th>書籍名</th>
+                <th>貸出日時</th>
+                <th>返却予定日</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+        
+        // レコードごとに行を追加
+        records.forEach(record => {
+          console.log("レコード詳細:", record);
+          
+          // 日付文字列をフォーマット (ISO文字列からDateオブジェクトを生成)
+          let lendingDateStr = 'N/A';
+          if (record.lendingDate && typeof record.lendingDate === 'string') {
+            try {
+              lendingDateStr = new Date(record.lendingDate).toLocaleString();
+            } catch (e) { console.error("貸出日時のパースエラー:", e); }
+          }
+          
+          let dueDateStr = 'N/A';
+          if (record.dueDate && typeof record.dueDate === 'string') {
+            try {
+              dueDateStr = new Date(record.dueDate).toLocaleDateString(); // 日付のみ表示
+            } catch (e) { console.error("返却予定日のパースエラー:", e); }
+          }
+          
+          html += `
+            <tr>
+              <td><input type="checkbox" class="book-checkbox" data-book-id="${record.bookId}" data-user-id="${record.userId}" data-lending-date="${record.lendingDate}" data-row-number="${record.rowNumber}" onchange="updateSelectedBooks()"></td>
+              <td>${record.bookId || 'N/A'}</td>
+              <td>${record.bookTitle || 'N/A'}</td>
+              <td>${lendingDateStr}</td>
+              <td>${dueDateStr}</td>
+            </tr>
+          `;
+        });
+        
+        html += `
+            </tbody>
+          </table>
+          <button id="bulk-return-button" onclick="returnSelectedBooks()" disabled>選択した本をまとめて返却</button>
+        `;
+        
+        container.innerHTML = html;
+        document.getElementById('rental-records').style.display = 'block';
+        updateBulkReturnButtonState(); // ボタンの初期状態を設定
+      }
+      
+      // 全てのチェックボックスの選択/解除を切り替える関数
+      function toggleAllCheckboxes() {
+        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+        const checkboxes = document.querySelectorAll('.book-checkbox');
+        
+        checkboxes.forEach(checkbox => {
+          checkbox.checked = selectAllCheckbox.checked;
+        });
+        
+        updateSelectedBooks();
+      }
+      
+      // 選択された書籍IDのリストを更新する関数
+      function updateSelectedBooks() {
+        selectedBookIds = [];
+        const checkboxes = document.querySelectorAll('.book-checkbox:checked');
+        
+        checkboxes.forEach(checkbox => {
+          const rowNumber = checkbox.getAttribute('data-row-number');
+          const bookId = checkbox.getAttribute('data-book-id');
+          if (rowNumber) {
+            selectedBookIds.push({
+              rowNumber: parseInt(rowNumber),
+              bookId: bookId // デバッグ用に保持
+            });
+          }
+        });
+        
+        console.log("選択された書籍ID:", selectedBookIds);
+        updateBulkReturnButtonState();
+      }
+      
+      // まとめて返却ボタンの状態を更新する関数
+      function updateBulkReturnButtonState() {
+        const bulkReturnButton = document.getElementById('bulk-return-button');
+        if (bulkReturnButton) {
+          bulkReturnButton.disabled = selectedBookIds.length === 0;
+        }
+      }
+      
+      // 選択された本をまとめて返却する関数
+      function returnSelectedBooks() {
+        if (selectedBookIds.length === 0) {
+          setMessage("返却する本が選択されていません。");
+          return;
+        }
+
+        setMessage(`選択された ${selectedBookIds.length} 冊の本を返却処理中...`);
+        
+        google.script.run
+          .withSuccessHandler((result) => {
+            console.log("一括返却結果:", result);
+            
+            if (result && result.message) {
+              // 成功メッセージを表示（アニメーション効果付き）
+              const messageEl = document.getElementById('message');
+              messageEl.innerHTML = `<span style="animation: fadeInScale 0.5s ease-out;">✅ ${result.message}</span>`;
+              
+              // CSSアニメーションを追加
+              if (!document.getElementById('success-animation-style')) {
+                const style = document.createElement('style');
+                style.id = 'success-animation-style';
+                style.textContent = `
+                  @keyframes fadeInScale {
+                    0% { opacity: 0; transform: scale(0.8); }
+                    50% { transform: scale(1.1); }
+                    100% { opacity: 1; transform: scale(1); }
+                  }
+                `;
+                document.head.appendChild(style);
+              }
+              
+              // 返却処理後、未返却一覧を再取得
+              const userId = document.getElementById('user-id').value.trim();
+              
+              // 入力フォームを初期化して次の入力に備える
+              selectedBookIds = []; // 選択リストをリセット
+              
+              // 1秒後に再検索
+              setTimeout(() => {
+                setMessage("残りの貸出本を検索中...");
+                fetchUnreturnedBooks(userId);
+                
+                // フォーカスを利用者ID入力欄に移動
+                setTimeout(() => {
+                  document.getElementById('user-id').focus();
+                }, 500);
+              }, 1000);
+            } else {
+              setMessage("返却処理の結果が不明です。");
+            }
+          })
+          .withFailureHandler((error) => {
+            setMessage(`一括返却処理エラー: ${error.message}`);
+            console.error("一括返却処理エラー:", error);
+          })
+          .processBulkReturnByRowNumbers(selectedBookIds);
+      }
+
+
+      function setMessage(msg) {
+        document.getElementById('message').innerText = msg;
+      }
+      
+      // 利用者IDが手入力された場合にEnterキーで検索を実行
+      document.getElementById('user-id').addEventListener('keypress', (event) => {
+        if (event.key === 'Enter' && !isScanning) {
+          searchUserRentals();
+        }
+      });
+      
+      // 検索ボタンのイベントリスナー
+      document.getElementById('search-user-button').addEventListener('click', () => {
+        if (!isScanning) {
+          const userId = document.getElementById('user-id').value.trim();
+          if (userId) {
+            searchUserRentals();
+          } else {
+            setMessage("利用者IDを入力してください。");
+          }
+        }
+      });
+
+      // カメラ切り替え関数
+      function switchCamera(viewportId) {
+        // カメラの向きを切り替え
+        currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+        
+        // 現在のスキャナーを停止
+        stopScanner(viewportId);
+        
+        // 入力フィールドIDを取得
+        let inputFieldId = 'user-id';
+        
+        // 新しいカメラ設定でスキャナーを再起動
+        setTimeout(() => {
+          startScanner(viewportId, inputFieldId);
+        }, 300);
+      }
+    </script>
+    <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+    <script>
+      // メニューボタンのURLを設定（高速化版）
+      (function() {
+        // URLをキャッシュ
+        let cachedUrl = sessionStorage.getItem('webAppUrl');
+        
+        if (cachedUrl) {
+          // キャッシュがあれば即座に設定
+          document.getElementById('menu-button-top').href = cachedUrl;
+          document.getElementById('menu-button-bottom').href = cachedUrl;
+        } else {
+          // キャッシュがない場合は取得してキャッシュに保存
+          google.script.run.withSuccessHandler(function(url) {
+            sessionStorage.setItem('webAppUrl', url);
+            document.getElementById('menu-button-top').href = url;
+            document.getElementById('menu-button-bottom').href = url;
+          }).getWebAppUrl();
+        }
+      })();
+      
+      // ブラウザの戻るボタンを無効化
+      window.history.pushState(null, null, window.location.href);
+      window.addEventListener('popstate', function(event) {
+        window.history.pushState(null, null, window.location.href);
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>貸出履歴検索</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+    
+    /* --- General Styles --- */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', sans-serif;
+      height: 100%;
+      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
+      color: #2c3e50;
+      line-height: 1.7;
+      font-size: 48px;
+      -webkit-text-size-adjust: 100%;
+      position: relative;
+    }
+    
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 35px,
+          rgba(139, 111, 78, 0.03) 35px,
+          rgba(139, 111, 78, 0.03) 70px
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .container {
+      position: relative;
+      z-index: 2;
+      margin: 0;
+      padding: 45px;
+      background-color: rgba(255, 255, 255, 0.95);
+      width: 100%;
+      min-height: 100vh;
+      box-sizing: border-box;
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #8b6f4e;
+      margin-top: 0;
+      margin-bottom: 90px;
+      border-bottom: 6px solid #d4af37;
+      padding-bottom: 60px;
+      font-size: 72px;
+      font-family: 'Noto Serif JP', serif;
+      font-weight: 700;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    
+    h1::before {
+      content: "📜";
+      display: block;
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    
+    /* --- Search Section --- */
+    .search-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+    }
+    
+    .search-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 30px;
+      font-family: 'Noto Serif JP', serif;
+    }
+    
+    .search-form {
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+    }
+    
+    .form-row {
+      display: flex;
+      gap: 30px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+    
+    .form-group {
+      flex: 1;
+      min-width: 300px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 15px;
+      font-weight: 700;
+      color: #8b6f4e;
+      font-size: 42px;
+    }
+    
+    input[type="text"], input[type="date"], select {
+      width: 100%;
+      padding: 25px;
+      border: 3px solid #d4af37;
+      border-radius: 15px;
+      font-size: 42px;
+      font-family: 'Noto Sans JP', sans-serif;
+      box-sizing: border-box;
+      background: rgba(255, 255, 255, 0.9);
+    }
+    
+    input[type="text"]:focus, input[type="date"]:focus, select:focus {
+      outline: none;
+      border-color: #8b6f4e;
+      box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.2);
+    }
+    
+    /* --- Button Styles --- */
+    button {
+      color: white;
+      padding: 30px 60px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 48px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      margin-top: 30px;
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      min-height: 100px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+    
+    button::before {
+      content: "";
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
+      transform: scale(0);
+      transition: transform 0.5s ease;
+    }
+    
+    button:hover::before {
+      transform: scale(1);
+    }
+    
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    }
+    
+    .search-button {
+      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+    }
+    
+    .clear-button {
+      background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+      margin-left: 20px;
+    }
+    
+    .export-button {
+      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+    }
+    
+    /* --- Results Section --- */
+    .results-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+      display: none;
+    }
+    
+    .results-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 30px;
+      font-family: 'Noto Serif JP', serif;
+      border-bottom: 3px solid #d4af37;
+      padding-bottom: 20px;
+    }
+    
+    .results-summary {
+      font-size: 42px;
+      color: #6c757d;
+      margin-bottom: 30px;
+    }
+    
+    /* --- Table Styles --- */
+    .table-container {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    th {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 30px;
+      text-align: left;
+      font-weight: 700;
+      font-size: 42px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    
+    td {
+      padding: 25px 30px;
+      border-bottom: 2px solid #f0f0f0;
+      font-size: 42px;
+    }
+    
+    tr:hover {
+      background: rgba(212, 175, 55, 0.1);
+    }
+    
+    .status-returned {
+      color: #28a745;
+      font-weight: 700;
+    }
+    
+    .status-not-returned {
+      color: #dc3545;
+      font-weight: 700;
+    }
+    
+    .status-overdue {
+      color: #ff6b6b;
+      font-weight: 700;
+    }
+    
+    /* --- Empty State --- */
+    .empty-state {
+      text-align: center;
+      padding: 120px 60px;
+      color: #6c757d;
+    }
+    
+    .empty-icon {
+      font-size: 120px;
+      margin-bottom: 30px;
+      opacity: 0.5;
+    }
+    
+    .empty-text {
+      font-size: 48px;
+      font-weight: 700;
+    }
+    
+    /* --- Message Area --- */
+    #message {
+      margin-top: 45px;
+      font-weight: 700;
+      padding: 45px;
+      border-radius: 20px;
+      text-align: center;
+      font-size: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    #message:not(:empty) {
+      display: block;
+      background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
+      border: 3px solid #b8dffc;
+      color: #0056b3;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    #message.error {
+      background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
+      color: #721c24;
+      border: 3px solid #f5c6cb;
+    }
+    
+    /* --- Menu Button --- */
+    .menu-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 30px 60px;
+      font-size: 48px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 15px;
+      margin: 30px 0;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      font-weight: 700;
+    }
+    
+    .menu-button:hover {
+      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    
+    .menu-button-container {
+      text-align: center;
+      margin: 30px 0;
+      position: relative;
+      z-index: 2;
+    }
+    
+    /* --- Responsive Design --- */
+    @media (max-width: 600px) {
+      .container {
+        padding: 30px;
+      }
+      h1 {
+        font-size: 60px;
+      }
+      th, td {
+        font-size: 36px;
+        padding: 20px;
+      }
+      button {
+        font-size: 42px;
+        padding: 24px 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
+  <div class="container">
+    <h1>貸出履歴検索</h1>
+    
+    <!-- 検索部分 -->
+    <div class="search-section">
+      <h2 class="search-title">検索条件</h2>
+      <div class="search-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="book-id">書籍ID</label>
+            <input type="text" id="book-id" placeholder="書籍IDを入力">
+          </div>
+          <div class="form-group">
+            <label for="book-title">書籍名（部分一致）</label>
+            <input type="text" id="book-title" placeholder="書籍名を入力">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="user-id">利用者ID</label>
+            <input type="text" id="user-id" placeholder="利用者IDを入力">
+          </div>
+          <div class="form-group">
+            <label for="user-name">利用者名（部分一致）</label>
+            <input type="text" id="user-name" placeholder="利用者名を入力">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="date-from">貸出日（開始）</label>
+            <input type="date" id="date-from">
+          </div>
+          <div class="form-group">
+            <label for="date-to">貸出日（終了）</label>
+            <input type="date" id="date-to">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="status">返却状況</label>
+            <select id="status">
+              <option value="">すべて</option>
+              <option value="未返却">未返却</option>
+              <option value="返却済">返却済</option>
+              <option value="延滞中">延滞中</option>
+            </select>
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 20px;">
+          <button class="search-button" onclick="searchHistory()">🔍 検索</button>
+          <button class="clear-button" onclick="clearSearch()">クリア</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 検索結果 -->
+    <div class="results-section" id="results-section">
+      <h2 class="results-title">検索結果</h2>
+      <div class="results-summary" id="results-summary"></div>
+      
+      <div class="table-container">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>書籍ID</th>
+              <th>書籍名</th>
+              <th>利用者ID</th>
+              <th>利用者名</th>
+              <th>貸出日</th>
+              <th>返却予定日</th>
+              <th>返却日</th>
+              <th>状態</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      
+      <div class="empty-state" id="empty-state" style="display: none;">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-text">検索条件に一致する履歴がありません</div>
+      </div>
+      
+      <div style="text-align: center; margin-top: 45px;">
+        <button class="export-button" onclick="exportHistory()">📊 検索結果をエクスポート</button>
+      </div>
+    </div>
+    
+    <div id="message"></div>
+  </div>
+  
+  <script>
+    let searchResults = [];
+    
+    // 検索を実行する関数
+    function searchHistory() {
+      const criteria = {
+        bookId: document.getElementById('book-id').value.trim(),
+        bookTitle: document.getElementById('book-title').value.trim(),
+        userId: document.getElementById('user-id').value.trim(),
+        userName: document.getElementById('user-name').value.trim(),
+        dateFrom: document.getElementById('date-from').value,
+        dateTo: document.getElementById('date-to').value,
+        status: document.getElementById('status').value
+      };
+      
+      showMessage('履歴を検索中...', '');
+      
+      google.script.run
+        .withSuccessHandler(function(results) {
+          searchResults = results;
+          displayResults(results);
+          showMessage('', '');
+        })
+        .withFailureHandler(function(error) {
+          showMessage('検索中にエラーが発生しました: ' + error.message, 'error');
+        })
+        .searchLendingHistory(criteria);
+    }
+    
+    // 検索結果を表示する関数
+    function displayResults(results) {
+      const resultsSection = document.getElementById('results-section');
+      const resultsSummary = document.getElementById('results-summary');
+      const tableBody = document.getElementById('table-body');
+      const emptyState = document.getElementById('empty-state');
+      const table = document.getElementById('results-table');
+      
+      resultsSection.style.display = 'block';
+      
+      if (results.length === 0) {
+        resultsSummary.textContent = '';
+        table.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+      }
+      
+      table.style.display = 'table';
+      emptyState.style.display = 'none';
+      
+      // サマリー情報
+      const notReturned = results.filter(r => r.status === '未返却').length;
+      const overdue = results.filter(r => r.isOverdue).length;
+      resultsSummary.textContent = `検索結果: ${results.length}件（未返却: ${notReturned}件、延滞中: ${overdue}件）`;
+      
+      // テーブルに結果を表示
+      tableBody.innerHTML = '';
+      results.forEach(record => {
+        const row = document.createElement('tr');
+        
+        let statusClass = '';
+        let statusText = record.status;
+        if (record.status === '未返却') {
+          if (record.isOverdue) {
+            statusClass = 'status-overdue';
+            statusText = '延滞中';
+          } else {
+            statusClass = 'status-not-returned';
+          }
+        } else {
+          statusClass = 'status-returned';
+        }
+        
+        row.innerHTML = `
+          <td>${escapeHtml(record.bookId)}</td>
+          <td>${escapeHtml(record.bookTitle)}</td>
+          <td>${escapeHtml(record.userId)}</td>
+          <td>${escapeHtml(record.userName)}</td>
+          <td>${formatDate(record.lendingDate)}</td>
+          <td>${formatDate(record.dueDate)}</td>
+          <td>${record.returnDate ? formatDate(record.returnDate) : '-'}</td>
+          <td class="${statusClass}">${statusText}</td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+    
+    // 検索条件をクリアする関数
+    function clearSearch() {
+      document.getElementById('book-id').value = '';
+      document.getElementById('book-title').value = '';
+      document.getElementById('user-id').value = '';
+      document.getElementById('user-name').value = '';
+      document.getElementById('date-from').value = '';
+      document.getElementById('date-to').value = '';
+      document.getElementById('status').value = '';
+      
+      document.getElementById('results-section').style.display = 'none';
+      searchResults = [];
+    }
+    
+    // 検索結果をエクスポートする関数
+    function exportHistory() {
+      if (searchResults.length === 0) {
+        showMessage('エクスポートする検索結果がありません', 'error');
+        return;
+      }
+      
+      showMessage('レポートを作成中...', '');
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showMessage('貸出履歴レポートを作成しました', '');
+        })
+        .withFailureHandler(function(error) {
+          showMessage('レポート作成中にエラーが発生しました: ' + error.message, 'error');
+        })
+        .createHistoryReport(searchResults);
+    }
+    
+    // メッセージを表示する関数
+    function showMessage(message, type) {
+      const messageEl = document.getElementById('message');
+      messageEl.textContent = message;
+      messageEl.className = type;
+      
+      if (type !== 'error' && message === '') {
+        setTimeout(function() {
+          messageEl.textContent = '';
+          messageEl.className = '';
+        }, 3000);
+      }
+    }
+    
+    // HTMLエスケープ関数
+    function escapeHtml(unsafe) {
+      if (!unsafe) return '';
+      return unsafe
+        .toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+    
+    // 日付フォーマット関数
+    function formatDate(dateString) {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    }
+  </script>
+  
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+  <script>
+    // メニューボタンのURLを設定（高速化版）
+    (function() {
+      // URLをキャッシュ
+      let cachedUrl = sessionStorage.getItem('webAppUrl');
+      
+      if (cachedUrl) {
+        // キャッシュがあれば即座に設定
+        document.getElementById('menu-button-top').href = cachedUrl;
+        document.getElementById('menu-button-bottom').href = cachedUrl;
+      } else {
+        // キャッシュがない場合は取得してキャッシュに保存
+        google.script.run.withSuccessHandler(function(url) {
+          sessionStorage.setItem('webAppUrl', url);
+          document.getElementById('menu-button-top').href = url;
+          document.getElementById('menu-button-bottom').href = url;
+        }).getWebAppUrl();
+      }
+    })();
+  </script>
+</body>
+</html>

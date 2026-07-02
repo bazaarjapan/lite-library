@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>貸出統計</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
+    
+    /* --- General Styles --- */
+    body, html {
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', sans-serif;
+      height: 100%;
+      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
+      color: #2c3e50;
+      line-height: 1.7;
+      font-size: 48px;
+      -webkit-text-size-adjust: 100%;
+      position: relative;
+    }
+    
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 35px,
+          rgba(139, 111, 78, 0.03) 35px,
+          rgba(139, 111, 78, 0.03) 70px
+        );
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    .container {
+      position: relative;
+      z-index: 2;
+      margin: 0;
+      padding: 45px;
+      background-color: rgba(255, 255, 255, 0.95);
+      width: 100%;
+      min-height: 100vh;
+      box-sizing: border-box;
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #8b6f4e;
+      margin-top: 0;
+      margin-bottom: 90px;
+      border-bottom: 6px solid #d4af37;
+      padding-bottom: 60px;
+      font-size: 72px;
+      font-family: 'Noto Serif JP', serif;
+      font-weight: 700;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    
+    h1::before {
+      content: "📊";
+      display: block;
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+    
+    /* --- Period Selection --- */
+    .period-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+    }
+    
+    .period-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 30px;
+      font-family: 'Noto Serif JP', serif;
+    }
+    
+    .period-buttons {
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+    
+    .period-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 25px 50px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 42px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      font-family: 'Noto Sans JP', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .period-button.active {
+      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
+    }
+    
+    .period-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    
+    /* --- Statistics Cards --- */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 45px;
+      margin-bottom: 60px;
+    }
+    
+    .stat-card {
+      background: rgba(255, 255, 255, 0.9);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      text-align: center;
+      transition: transform 0.3s ease;
+    }
+    
+    .stat-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+    }
+    
+    .stat-icon {
+      font-size: 72px;
+      margin-bottom: 20px;
+    }
+    
+    .stat-value {
+      font-size: 84px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 15px;
+      font-family: 'Noto Serif JP', serif;
+    }
+    
+    .stat-label {
+      font-size: 36px;
+      color: #6c757d;
+    }
+    
+    /* --- Ranking Section --- */
+    .ranking-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+    }
+    
+    .ranking-title {
+      font-size: 54px;
+      font-weight: 700;
+      color: #8b6f4e;
+      margin-bottom: 30px;
+      font-family: 'Noto Serif JP', serif;
+      border-bottom: 3px solid #d4af37;
+      padding-bottom: 20px;
+    }
+    
+    .ranking-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    
+    .ranking-item {
+      display: flex;
+      align-items: center;
+      padding: 25px;
+      border-bottom: 2px solid #f0f0f0;
+      font-size: 42px;
+      transition: background-color 0.3s ease;
+    }
+    
+    .ranking-item:hover {
+      background-color: rgba(212, 175, 55, 0.1);
+    }
+    
+    .ranking-number {
+      font-size: 60px;
+      font-weight: 700;
+      color: #d4af37;
+      width: 100px;
+      text-align: center;
+      font-family: 'Noto Serif JP', serif;
+    }
+    
+    .ranking-name {
+      flex: 1;
+      font-weight: 700;
+      color: #2c3e50;
+      margin: 0 30px;
+    }
+    
+    .ranking-count {
+      font-weight: 700;
+      color: #8b6f4e;
+    }
+    
+    /* --- Chart Section --- */
+    .chart-section {
+      background: rgba(255, 255, 255, 0.7);
+      padding: 45px;
+      border-radius: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+      margin-bottom: 60px;
+    }
+    
+    .chart-container {
+      height: 400px;
+      margin-top: 30px;
+    }
+    
+    /* --- Message Area --- */
+    #message {
+      margin-top: 45px;
+      font-weight: 700;
+      padding: 45px;
+      border-radius: 20px;
+      text-align: center;
+      font-size: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    #message:not(:empty) {
+      display: block;
+      background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
+      border: 3px solid #b8dffc;
+      color: #0056b3;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    #message.error {
+      background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
+      color: #721c24;
+      border: 3px solid #f5c6cb;
+    }
+    
+    /* --- Menu Button --- */
+    .menu-button {
+      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
+      color: white;
+      padding: 30px 60px;
+      font-size: 48px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 15px;
+      margin: 30px 0;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      font-weight: 700;
+    }
+    
+    .menu-button:hover {
+      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    }
+    
+    .menu-button-container {
+      text-align: center;
+      margin: 30px 0;
+      position: relative;
+      z-index: 2;
+    }
+    
+    /* --- Export Button --- */
+    .export-button {
+      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+      color: white;
+      padding: 30px 60px;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 48px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      margin-top: 30px;
+      font-family: 'Noto Sans JP', sans-serif;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+      display: inline-flex;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .export-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    }
+    
+    /* --- Responsive Design --- */
+    @media (max-width: 600px) {
+      .container {
+        padding: 30px;
+      }
+      h1 {
+        font-size: 60px;
+      }
+      .stat-value {
+        font-size: 60px;
+      }
+      .period-button {
+        font-size: 36px;
+        padding: 20px 40px;
+      }
+      .ranking-item {
+        font-size: 36px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
+  <div class="container">
+    <h1>貸出統計</h1>
+    
+    <!-- 期間選択 -->
+    <div class="period-section">
+      <h2 class="period-title">集計期間</h2>
+      <div class="period-buttons">
+        <button class="period-button active" onclick="changePeriod('week')">今週</button>
+        <button class="period-button" onclick="changePeriod('month')">今月</button>
+        <button class="period-button" onclick="changePeriod('year')">今年</button>
+        <button class="period-button" onclick="changePeriod('all')">全期間</button>
+      </div>
+    </div>
+    
+    <!-- 統計カード -->
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📚</div>
+        <div class="stat-value" id="total-lending">-</div>
+        <div class="stat-label">総貸出数</div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon">📖</div>
+        <div class="stat-value" id="current-lending">-</div>
+        <div class="stat-label">貸出中</div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-value" id="returned">-</div>
+        <div class="stat-label">返却済</div>
+      </div>
+      
+      <div class="stat-card">
+        <div class="stat-icon">⏰</div>
+        <div class="stat-value" id="overdue">-</div>
+        <div class="stat-label">延滞中</div>
+      </div>
+    </div>
+    
+    <!-- 人気書籍ランキング -->
+    <div class="ranking-section">
+      <h2 class="ranking-title">📊 人気書籍ランキング TOP10</h2>
+      <ol class="ranking-list" id="book-ranking"></ol>
+    </div>
+    
+    <!-- アクティブ利用者ランキング -->
+    <div class="ranking-section">
+      <h2 class="ranking-title">👥 アクティブ利用者ランキング TOP10</h2>
+      <ol class="ranking-list" id="user-ranking"></ol>
+    </div>
+    
+    <!-- エクスポートボタン -->
+    <div style="text-align: center;">
+      <button class="export-button" onclick="exportStatistics()">
+        📊 統計レポートを出力
+      </button>
+    </div>
+    
+    <div id="message"></div>
+  </div>
+  
+  <script>
+    let currentPeriod = 'week';
+    let statisticsData = null;
+    
+    // ページ読み込み時に統計データを取得
+    document.addEventListener('DOMContentLoaded', function() {
+      loadStatistics();
+    });
+    
+    // 期間を変更する関数
+    function changePeriod(period) {
+      currentPeriod = period;
+      
+      // ボタンのアクティブ状態を更新
+      const buttons = document.querySelectorAll('.period-button');
+      buttons.forEach(button => {
+        button.classList.remove('active');
+        if (button.textContent.includes(getPeriodText(period))) {
+          button.classList.add('active');
+        }
+      });
+      
+      // データを再表示
+      if (statisticsData) {
+        displayStatistics(statisticsData);
+      }
+    }
+    
+    // 期間のテキストを取得
+    function getPeriodText(period) {
+      const texts = {
+        week: '今週',
+        month: '今月',
+        year: '今年',
+        all: '全期間'
+      };
+      return texts[period] || '今週';
+    }
+    
+    // 統計データを読み込む関数
+    function loadStatistics() {
+      showMessage('統計データを読み込み中...', '');
+      
+      google.script.run
+        .withSuccessHandler(function(data) {
+          statisticsData = data;
+          displayStatistics(data);
+          showMessage('', '');
+        })
+        .withFailureHandler(function(error) {
+          showMessage('統計データの読み込みに失敗しました: ' + error.message, 'error');
+        })
+        .getLibraryStatistics();
+    }
+    
+    // 統計データを表示する関数
+    function displayStatistics(data) {
+      // 期間でフィルタリング
+      const filteredData = filterByPeriod(data, currentPeriod);
+      
+      // 統計カードを更新
+      document.getElementById('total-lending').textContent = filteredData.totalLending;
+      document.getElementById('current-lending').textContent = filteredData.currentLending;
+      document.getElementById('returned').textContent = filteredData.returned;
+      document.getElementById('overdue').textContent = filteredData.overdue;
+      
+      // 人気書籍ランキングを更新
+      displayBookRanking(filteredData.popularBooks);
+      
+      // アクティブ利用者ランキングを更新
+      displayUserRanking(filteredData.activeUsers);
+    }
+    
+    // 期間でフィルタリングする関数
+    function filterByPeriod(data, period) {
+      const now = new Date();
+      let startDate;
+      
+      switch (period) {
+        case 'week':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          break;
+        case 'year':
+          startDate = new Date(now.getFullYear(), 0, 1);
+          break;
+        default:
+          startDate = new Date(0); // 全期間
+      }
+      
+      // フィルタリングされたデータを計算
+      const filtered = {
+        totalLending: 0,
+        currentLending: 0,
+        returned: 0,
+        overdue: 0,
+        popularBooks: {},
+        activeUsers: {}
+      };
+      
+      data.records.forEach(record => {
+        const lendingDate = new Date(record.lendingDate);
+        if (lendingDate >= startDate) {
+          filtered.totalLending++;
+          
+          if (record.status === '未返却') {
+            filtered.currentLending++;
+            if (record.isOverdue) {
+              filtered.overdue++;
+            }
+          } else {
+            filtered.returned++;
+          }
+          
+          // 書籍カウント
+          if (!filtered.popularBooks[record.bookTitle]) {
+            filtered.popularBooks[record.bookTitle] = 0;
+          }
+          filtered.popularBooks[record.bookTitle]++;
+          
+          // 利用者カウント
+          if (!filtered.activeUsers[record.userName]) {
+            filtered.activeUsers[record.userName] = 0;
+          }
+          filtered.activeUsers[record.userName]++;
+        }
+      });
+      
+      return filtered;
+    }
+    
+    // 人気書籍ランキングを表示
+    function displayBookRanking(bookData) {
+      const ranking = Object.entries(bookData)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+      
+      const rankingList = document.getElementById('book-ranking');
+      rankingList.innerHTML = '';
+      
+      if (ranking.length === 0) {
+        rankingList.innerHTML = '<li class="ranking-item">データがありません</li>';
+        return;
+      }
+      
+      ranking.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.className = 'ranking-item';
+        li.innerHTML = `
+          <span class="ranking-number">${index + 1}</span>
+          <span class="ranking-name">${escapeHtml(item[0])}</span>
+          <span class="ranking-count">${item[1]}回</span>
+        `;
+        rankingList.appendChild(li);
+      });
+    }
+    
+    // アクティブ利用者ランキングを表示
+    function displayUserRanking(userData) {
+      const ranking = Object.entries(userData)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+      
+      const rankingList = document.getElementById('user-ranking');
+      rankingList.innerHTML = '';
+      
+      if (ranking.length === 0) {
+        rankingList.innerHTML = '<li class="ranking-item">データがありません</li>';
+        return;
+      }
+      
+      ranking.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.className = 'ranking-item';
+        li.innerHTML = `
+          <span class="ranking-number">${index + 1}</span>
+          <span class="ranking-name">${escapeHtml(item[0])}</span>
+          <span class="ranking-count">${item[1]}冊</span>
+        `;
+        rankingList.appendChild(li);
+      });
+    }
+    
+    // 統計レポートをエクスポート
+    function exportStatistics() {
+      showMessage('統計レポートを作成中...', '');
+      
+      google.script.run
+        .withSuccessHandler(function(result) {
+          showMessage('統計レポートを作成しました', '');
+        })
+        .withFailureHandler(function(error) {
+          showMessage('レポート作成に失敗しました: ' + error.message, 'error');
+        })
+        .createStatisticsReport(currentPeriod);
+    }
+    
+    // メッセージを表示する関数
+    function showMessage(message, type) {
+      const messageEl = document.getElementById('message');
+      messageEl.textContent = message;
+      messageEl.className = type;
+      
+      if (type !== 'error' && message === '') {
+        setTimeout(function() {
+          messageEl.textContent = '';
+          messageEl.className = '';
+        }, 3000);
+      }
+    }
+    
+    // HTMLエスケープ関数
+    function escapeHtml(unsafe) {
+      if (!unsafe) return '';
+      return unsafe
+        .toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+  
+  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+  <script>
+    // メニューボタンのURLを設定（高速化版）
+    (function() {
+      // URLをキャッシュ
+      let cachedUrl = sessionStorage.getItem('webAppUrl');
+      
+      if (cachedUrl) {
+        // キャッシュがあれば即座に設定
+        document.getElementById('menu-button-top').href = cachedUrl;
+        document.getElementById('menu-button-bottom').href = cachedUrl;
+      } else {
+        // キャッシュがない場合は取得してキャッシュに保存
+        google.script.run.withSuccessHandler(function(url) {
+          sessionStorage.setItem('webAppUrl', url);
+          document.getElementById('menu-button-top').href = url;
+          document.getElementById('menu-button-bottom').href = url;
+        }).getWebAppUrl();
+      }
+    })();
+  </script>
+</body>
+</html>
