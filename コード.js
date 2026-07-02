@@ -2512,15 +2512,19 @@ function migrateBookDbLayout_() {
       const normalizedB = normalizeIsbn_(colB);
       const isNewFormatRow = isValidIsbn_(normalizedB) && colA.indexOf(normalizedB) === 0;
 
+      // 状態は既存のG列を信用せず、全行とも貸出記録(未返却)から導出する。
+      // 旧ヘッダーのシートでは貸出・返却時の状態更新が正しい列に届いておらず、
+      // 新形式の行でもG列が古いままの可能性があるため
+      const status = unreturnedIds.has(colA.toLowerCase()) ? "貸出中" : "在庫";
+
       if (isNewFormatRow) {
-        newRows.push([colA, normalizedB, row[2] || "", row[3] || "", row[4] || "", row[5] || "", row[6] || "在庫"]);
+        newRows.push([colA, normalizedB, row[2] || "", row[3] || "", row[4] || "", row[5] || "", status]);
         kept++;
       } else {
         // 旧形式: A=書籍ID(通常ISBN), B=書籍名, C=著者名, D=出版社, E=備考
         // 管理番号には元の書籍IDをそのまま使い、貸出記録との対応を維持する
         const normalizedA = normalizeIsbn_(colA);
         const isbn = isValidIsbn_(normalizedA) ? normalizedA : "";
-        const status = unreturnedIds.has(colA.toLowerCase()) ? "貸出中" : "在庫";
         newRows.push([colA, isbn, colB, row[2] || "", row[3] || "", row[4] || "", status]);
         migrated++;
       }
