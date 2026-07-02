@@ -2005,8 +2005,10 @@ function setupLibrarySystem() {
       sheet.autoResizeColumns(1, def.headers.length);
     });
 
-    // 設定DBは getLibrarySettings がデフォルト設定込みで作成する(既存なら何もしない)
-    const settingsExisted = !!ss.getSheetByName("設定DB");
+    // 設定DBは getLibrarySettings がデフォルト設定込みで初期化する
+    // (シートが存在しない場合と、空タブとして手動作成済みの場合の両方に対応)
+    const existingSettingsSheet = ss.getSheetByName("設定DB");
+    const settingsExisted = !!existingSettingsSheet && existingSettingsSheet.getLastRow() > 0;
     getLibrarySettings();
     if (settingsExisted) {
       skipped.push("設定DB");
@@ -2446,11 +2448,14 @@ function getLibrarySettings() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let settingsSheet = ss.getSheetByName("設定DB");
-    
+
     // 設定DBシートが存在しない場合は作成
     if (!settingsSheet) {
       settingsSheet = ss.insertSheet("設定DB");
-      
+    }
+
+    // シートが空(手動で作られた空タブを含む)ならヘッダーとデフォルト設定を投入
+    if (settingsSheet.getLastRow() === 0) {
       // ヘッダー行を設定
       const headers = [
         ["設定項目", "設定値", "説明", "更新日時"]
