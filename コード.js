@@ -1355,15 +1355,27 @@ function processBulkLending_(bulkData) {
     const bookData = bookSheet.getDataRange().getValues();
     const isNewLayout = bookData.length > 0 && bookData[0][0] === "管理番号";
     const titleColIndex = isNewLayout ? 2 : 1;
-    const bookMap = new Map(); // 書籍IDをキー、{title, status, rowNumber} を値とするMap
+    const bookMap = new Map(); // 管理番号をキー、{title, status, rowNumber} を値とするMap
+    const copiesByIsbn = new Map(); // ISBNをキー、同一ISBNの蔵書 [{managementNumber, entry}] を値とするMap
     for (let i = 1; i < bookData.length; i++) {
       const bookId = bookData[i][0] ? bookData[i][0].toString().trim() : null;
       if (bookId) {
-        bookMap.set(bookId, {
+        const entry = {
           title: bookData[i][titleColIndex] || "タイトル不明",
           status: isNewLayout ? (bookData[i][6] || "在庫") : "在庫",
           rowNumber: i + 1
-        });
+        };
+        bookMap.set(bookId, entry);
+        // 新レイアウトではISBN(B列)でも検索できるようにする(getBookDetails と同じ挙動)
+        if (isNewLayout && bookData[i][1]) {
+          const isbn = bookData[i][1].toString().trim();
+          if (isbn) {
+            if (!copiesByIsbn.has(isbn)) {
+              copiesByIsbn.set(isbn, []);
+            }
+            copiesByIsbn.get(isbn).push({ managementNumber: bookId, entry: entry });
+          }
+        }
       }
     }
 
@@ -1399,7 +1411,24 @@ function processBulkLending_(bulkData) {
       const trimmedBookId = bookId.trim();
       if (!trimmedBookId) return; // 空のIDはスキップ
 
-      const book = bookMap.get(trimmedBookId);
+      let book = bookMap.get(trimmedBookId);
+      let lendId = trimmedBookId; // 実際に貸出記録へ書き込むID(管理番号)
+
+      // 管理番号で見つからない場合はISBNとして解釈し、貸出可能なコピーを探す
+      if (!book && copiesByIsbn.has(trimmedBookId)) {
+        const availableCopy = copiesByIsbn.get(trimmedBookId).find(copy =>
+          copy.entry.status === "在庫" && !activeLoanIds.has(copy.managementNumber)
+        );
+        if (!availableCopy) {
+          errorCount++;
+          errorMessages.push(`${trimmedBookId}（在庫なし）`);
+          console.warn(`貸出スキップ: ISBN ${trimmedBookId} に貸出可能な在庫がありません。`);
+          return;
+        }
+        book = availableCopy.entry;
+        lendId = availableCopy.managementNumber;
+        console.log(`ISBN ${trimmedBookId} の在庫コピー ${lendId} を貸出対象に選択しました。`);
+      }
 
       // 在庫チェック: DB未登録・貸出中の本は貸し出さない（二重貸出防止）
       if (!book) {
@@ -1414,20 +1443,20 @@ function processBulkLending_(bulkData) {
         console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} は「${book.status}」のため貸出できません。`);
         return;
       }
-      if (activeLoanIds.has(trimmedBookId)) {
+      if (activeLoanIds.has(lendId)) {
         errorCount++;
-        errorMessages.push(`${trimmedBookId}（未返却の貸出記録あり）`);
-        console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} には未返却の貸出記録が存在します。`);
+        errorMessages.push(`${lendId}（未返却の貸出記録あり）`);
+        console.warn(`貸出スキップ: 書籍ID ${lendId} には未返却の貸出記録が存在します。`);
         return;
       }
 
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
       book.status = "貸出中";
-      activeLoanIds.add(trimmedBookId);
+      activeLoanIds.add(lendId);
 
-      // スプレッドシートに追加するデータ配列
+      // スプレッドシートに追加するデータ配列(貸出記録には管理番号を記録する)
       rowsToAdd.push([
-        trimmedBookId,
+        lendId,
         book.title,
         bulkData.userId,
         bulkData.userName,
@@ -1439,7 +1468,7 @@ function processBulkLending_(bulkData) {
         rowsToMarkLent.push(book.rowNumber);
       }
       successCount++;
-      console.log(`貸出準備完了: ${book.title} (ID: ${trimmedBookId})`);
+      console.log(`貸出準備完了: ${book.title} (ID: ${lendId})`);
     });
 
     // まとめて追記
