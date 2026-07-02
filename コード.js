@@ -2393,11 +2393,12 @@ function setupLibrarySystem() {
       sheet.autoResizeColumns(1, def.headers.length);
     });
 
-    // 設定DBは getLibrarySettings がデフォルト設定込みで初期化する
-    // (シートが存在しない場合と、空タブとして手動作成済みの場合の両方に対応)
+    // 設定DBは ensureSettingsSheet_ がデフォルト設定込みで初期化する
+    // (シートが存在しない場合と、空タブとして手動作成済みの場合の両方に対応。
+    //  getLibrarySettings はキャッシュヒット時にシートを作成しないためここでは使わない)
     const existingSettingsSheet = ss.getSheetByName("設定DB");
     const settingsExisted = !!existingSettingsSheet && existingSettingsSheet.getLastRow() > 0;
-    getLibrarySettings();
+    ensureSettingsSheet_();
     if (settingsExisted) {
       skipped.push("設定DB");
     } else {
@@ -2922,41 +2923,65 @@ ${libraryName}管理システム
  * 図書館の設定情報を取得する関数
  * @return {object} 設定情報オブジェクト
  */
+// 設定キャッシュのキーとTTL(秒)。設定はシート読み込みが毎トランザクションで
+// 発生するためキャッシュする。saveLibrarySettings_ で無効化されるが、
+// 設定DBシートを直接編集した場合は最大TTL秒だけ古い値が使われる。
+const SETTINGS_CACHE_KEY = "librarySettings_v1";
+const SETTINGS_CACHE_TTL_SECONDS = 300;
+
+/**
+ * 設定DBシートを取得する(存在しない・空の場合はヘッダーとデフォルト設定を投入して作成)。
+ * キャッシュの状態に依存しないため、シートの存在を保証したい初期化・保存経路は
+ * getLibrarySettings() ではなくこの関数を使うこと。
+ * @return {Sheet} 設定DBシート
+ */
+function ensureSettingsSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let settingsSheet = ss.getSheetByName("設定DB");
+
+  // 設定DBシートが存在しない場合は作成
+  if (!settingsSheet) {
+    settingsSheet = ss.insertSheet("設定DB");
+  }
+
+  // シートが空(手動で作られた空タブを含む)ならヘッダーとデフォルト設定を投入
+  if (settingsSheet.getLastRow() === 0) {
+    // ヘッダー行を設定
+    const headers = [
+      ["設定項目", "設定値", "説明", "更新日時"]
+    ];
+    settingsSheet.getRange(1, 1, 1, 4).setValues(headers);
+    settingsSheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#f3f3f3");
+
+    // デフォルト設定を追加
+    const defaultSettings = [
+      ["lendingDays", "14", "貸出期間（日数）", new Date()],
+      ["maxBooks", "5", "一人あたりの最大貸出冊数", new Date()],
+      ["reminderDays", "3", "返却リマインダー（日前）", new Date()],
+      ["enableEmail", "true", "メール通知を有効にする", new Date()],
+      ["enableOverdue", "true", "延滞通知を有効にする", new Date()],
+      ["libraryEmail", "", "図書館メールアドレス", new Date()],
+      ["libraryName", "", "図書館名", new Date()],
+      ["operationMode", "normal", "運用モード", new Date()]
+    ];
+
+    settingsSheet.getRange(2, 1, defaultSettings.length, 4).setValues(defaultSettings);
+    settingsSheet.autoResizeColumns(1, 4);
+  }
+
+  return settingsSheet;
+}
+
 function getLibrarySettings() {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let settingsSheet = ss.getSheetByName("設定DB");
-
-    // 設定DBシートが存在しない場合は作成
-    if (!settingsSheet) {
-      settingsSheet = ss.insertSheet("設定DB");
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(SETTINGS_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
     }
 
-    // シートが空(手動で作られた空タブを含む)ならヘッダーとデフォルト設定を投入
-    if (settingsSheet.getLastRow() === 0) {
-      // ヘッダー行を設定
-      const headers = [
-        ["設定項目", "設定値", "説明", "更新日時"]
-      ];
-      settingsSheet.getRange(1, 1, 1, 4).setValues(headers);
-      settingsSheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#f3f3f3");
-      
-      // デフォルト設定を追加
-      const defaultSettings = [
-        ["lendingDays", "14", "貸出期間（日数）", new Date()],
-        ["maxBooks", "5", "一人あたりの最大貸出冊数", new Date()],
-        ["reminderDays", "3", "返却リマインダー（日前）", new Date()],
-        ["enableEmail", "true", "メール通知を有効にする", new Date()],
-        ["enableOverdue", "true", "延滞通知を有効にする", new Date()],
-        ["libraryEmail", "", "図書館メールアドレス", new Date()],
-        ["libraryName", "", "図書館名", new Date()],
-        ["operationMode", "normal", "運用モード", new Date()]
-      ];
-      
-      settingsSheet.getRange(2, 1, defaultSettings.length, 4).setValues(defaultSettings);
-      settingsSheet.autoResizeColumns(1, 4);
-    }
-    
+    const settingsSheet = ensureSettingsSheet_();
+
     // 設定データを取得
     const data = settingsSheet.getDataRange().getValues();
     const settings = {};
@@ -2983,8 +3008,9 @@ function getLibrarySettings() {
     }
     
     console.log("設定取得成功:", settings);
+    cache.put(SETTINGS_CACHE_KEY, JSON.stringify(settings), SETTINGS_CACHE_TTL_SECONDS);
     return settings;
-    
+
   } catch (error) {
     console.error(`設定の取得中にエラーが発生しました: ${error}`);
     throw new Error(`設定の取得に失敗しました: ${error.message}`);
@@ -3005,15 +3031,9 @@ function saveLibrarySettings(settings) {
 
 function saveLibrarySettings_(settings) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let settingsSheet = ss.getSheetByName("設定DB");
-    
-    if (!settingsSheet) {
-      // 設定DBシートが存在しない場合は作成
-      getLibrarySettings(); // この関数内でシートが作成される
-      settingsSheet = ss.getSheetByName("設定DB");
-    }
-    
+    // 設定DBシートが存在しない・空の場合も作成される(キャッシュに依存しない)
+    const settingsSheet = ensureSettingsSheet_();
+
     // 現在のデータを取得
     const data = settingsSheet.getDataRange().getValues();
     const currentDate = new Date();
@@ -3040,6 +3060,9 @@ function saveLibrarySettings_(settings) {
       }
     }
     
+    // 保存した設定が即座に反映されるようキャッシュを無効化
+    CacheService.getScriptCache().remove(SETTINGS_CACHE_KEY);
+
     console.log("設定保存成功:", settings);
     return { success: true, message: "設定を保存しました。" };
     

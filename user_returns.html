@@ -1119,23 +1119,11 @@
     </script>
     <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
     <script>
-      // メニューボタンのURLを設定（高速化版）
+      // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
       (function() {
-        // URLをキャッシュ
-        let cachedUrl = sessionStorage.getItem('webAppUrl');
-        
-        if (cachedUrl) {
-          // キャッシュがあれば即座に設定
-          document.getElementById('menu-button-top').href = cachedUrl;
-          document.getElementById('menu-button-bottom').href = cachedUrl;
-        } else {
-          // キャッシュがない場合は取得してキャッシュに保存
-          google.script.run.withSuccessHandler(function(url) {
-            sessionStorage.setItem('webAppUrl', url);
-            document.getElementById('menu-button-top').href = url;
-            document.getElementById('menu-button-bottom').href = url;
-          }).getWebAppUrl();
-        }
+        const url = '<?!= getWebAppUrl(); ?>';
+        document.getElementById('menu-button-top').href = url;
+        document.getElementById('menu-button-bottom').href = url;
       })();
       
       // ブラウザの戻るボタンを無効化

@@ -335,73 +335,39 @@
   </div>
 
   <script>
-    // WebアプリのURLを取得してメニューリンクを生成
-    google.script.run.withSuccessHandler(function(baseUrl) {
-      const menuItems = [
-        { page: 'checkout', icon: '📚', text: '図書貸出', desc: '書籍の貸出処理', class: 'checkout' },
-        { page: 'return', icon: '📖', text: '図書返却', desc: '書籍の返却処理', class: 'return' },
-        { page: 'user_returns', icon: '👤', text: '利用者別返却', desc: '利用者ごとの返却', class: 'user-returns' },
-        { page: 'finder', icon: '🔍', text: '貸出書籍検索', desc: '貸出中の書籍を検索', class: 'finder' },
-        { page: 'register', icon: '➕', text: '書籍登録', desc: '新しい書籍を登録', class: 'register' },
-        { page: 'user_register', icon: '👥', text: '利用者登録', desc: '新規利用者を登録', class: 'user-register' },
-        { page: 'card_issue', icon: '🎫', text: '図書カード発行', desc: '利用者カードを発行', class: 'card-issue' },
-        { page: 'user_edit', icon: '✏️', text: '利用者情報編集', desc: '利用者情報の変更・削除', class: 'user-edit' },
-        { page: 'book_edit', icon: '📝', text: '書籍情報編集', desc: '書籍情報の変更・削除', class: 'book-edit' },
-        { page: 'inventory', icon: '📚', text: '書籍在庫管理', desc: '蔵書の状態を確認', class: 'inventory' },
-        { page: 'history', icon: '📜', text: '貸出履歴検索', desc: '過去の貸出履歴を検索', class: 'history' },
-        { page: 'overdue', icon: '⏰', text: '延滞者リスト', desc: '延滞中の書籍を確認', class: 'overdue' },
-        { page: 'statistics', icon: '📊', text: '貸出統計', desc: '利用状況を分析', class: 'statistics' },
-        { page: 'settings', icon: '⚙️', text: '図書館設定', desc: '貸出期間などの設定', class: 'settings' }
-      ];
+    // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時描画)
+    const baseUrl = '<?!= getWebAppUrl(); ?>';
+    const menuItems = [
+      { page: 'checkout', icon: '📚', text: '図書貸出', desc: '書籍の貸出処理', class: 'checkout' },
+      { page: 'return', icon: '📖', text: '図書返却', desc: '書籍の返却処理', class: 'return' },
+      { page: 'user_returns', icon: '👤', text: '利用者別返却', desc: '利用者ごとの返却', class: 'user-returns' },
+      { page: 'finder', icon: '🔍', text: '貸出書籍検索', desc: '貸出中の書籍を検索', class: 'finder' },
+      { page: 'register', icon: '➕', text: '書籍登録', desc: '新しい書籍を登録', class: 'register' },
+      { page: 'user_register', icon: '👥', text: '利用者登録', desc: '新規利用者を登録', class: 'user-register' },
+      { page: 'card_issue', icon: '🎫', text: '図書カード発行', desc: '利用者カードを発行', class: 'card-issue' },
+      { page: 'user_edit', icon: '✏️', text: '利用者情報編集', desc: '利用者情報の変更・削除', class: 'user-edit' },
+      { page: 'book_edit', icon: '📝', text: '書籍情報編集', desc: '書籍情報の変更・削除', class: 'book-edit' },
+      { page: 'inventory', icon: '📚', text: '書籍在庫管理', desc: '蔵書の状態を確認', class: 'inventory' },
+      { page: 'history', icon: '📜', text: '貸出履歴検索', desc: '過去の貸出履歴を検索', class: 'history' },
+      { page: 'overdue', icon: '⏰', text: '延滞者リスト', desc: '延滞中の書籍を確認', class: 'overdue' },
+      { page: 'statistics', icon: '📊', text: '貸出統計', desc: '利用状況を分析', class: 'statistics' },
+      { page: 'settings', icon: '⚙️', text: '図書館設定', desc: '貸出期間などの設定', class: 'settings' }
+    ];
 
-      let menuHtml = '';
-      menuItems.forEach(item => {
-        menuHtml += `
-          <a href="${baseUrl}?page=${item.page}" class="menu-button ${item.class}">
-            <span class="menu-icon">${item.icon}</span>
-            <div class="menu-text">
-              <div class="menu-title">${item.text}</div>
-              <div class="menu-description">${item.desc}</div>
-            </div>
-          </a>
-        `;
-      });
+    let menuHtml = '';
+    menuItems.forEach(item => {
+      menuHtml += `
+        <a href="${baseUrl}?page=${item.page}" class="menu-button ${item.class}">
+          <span class="menu-icon">${item.icon}</span>
+          <div class="menu-text">
+            <div class="menu-title">${item.text}</div>
+            <div class="menu-description">${item.desc}</div>
+          </div>
+        </a>
+      `;
+    });
 
-      document.getElementById('menuContainer').innerHTML = menuHtml;
-    }).withFailureHandler(function(error) {
-      console.error('Error:', error);
-      // エラー時は相対URLを使用
-      const errorMenuItems = [
-        { page: 'checkout', icon: '📚', text: '図書貸出', desc: '書籍の貸出処理', class: 'checkout' },
-        { page: 'return', icon: '📖', text: '図書返却', desc: '書籍の返却処理', class: 'return' },
-        { page: 'user_returns', icon: '👤', text: '利用者別返却', desc: '利用者ごとの返却', class: 'user-returns' },
-        { page: 'finder', icon: '🔍', text: '貸出書籍検索', desc: '貸出中の書籍を検索', class: 'finder' },
-        { page: 'register', icon: '➕', text: '書籍登録', desc: '新しい書籍を登録', class: 'register' },
-        { page: 'user_register', icon: '👥', text: '利用者登録', desc: '新規利用者を登録', class: 'user-register' },
-        { page: 'card_issue', icon: '🎫', text: '図書カード発行', desc: '利用者カードを発行', class: 'card-issue' },
-        { page: 'user_edit', icon: '✏️', text: '利用者情報編集', desc: '利用者情報の変更・削除', class: 'user-edit' },
-        { page: 'book_edit', icon: '📝', text: '書籍情報編集', desc: '書籍情報の変更・削除', class: 'book-edit' },
-        { page: 'inventory', icon: '📚', text: '書籍在庫管理', desc: '蔵書の状態を確認', class: 'inventory' },
-        { page: 'history', icon: '📜', text: '貸出履歴検索', desc: '過去の貸出履歴を検索', class: 'history' },
-        { page: 'overdue', icon: '⏰', text: '延滞者リスト', desc: '延滞中の書籍を確認', class: 'overdue' },
-        { page: 'statistics', icon: '📊', text: '貸出統計', desc: '利用状況を分析', class: 'statistics' },
-        { page: 'settings', icon: '⚙️', text: '図書館設定', desc: '貸出期間などの設定', class: 'settings' }
-      ];
-      
-      let errorMenuHtml = '';
-      errorMenuItems.forEach(item => {
-        errorMenuHtml += `
-          <a href="?page=${item.page}" class="menu-button ${item.class}">
-            <span class="menu-icon">${item.icon}</span>
-            <div class="menu-text">
-              <div class="menu-title">${item.text}</div>
-              <div class="menu-description">${item.desc}</div>
-            </div>
-          </a>
-        `;
-      });
-      document.getElementById('menuContainer').innerHTML = errorMenuHtml;
-    }).getWebAppUrl();
+    document.getElementById('menuContainer').innerHTML = menuHtml;
   </script>
 </body>
 </html>
