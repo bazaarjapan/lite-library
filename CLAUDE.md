@@ -44,6 +44,7 @@ Column positions and header names are hard-coded as array indices throughout コ
 
 **Operational features (run from the spreadsheet's 管理メニュー, defined in `onOpen`):**
 - `setupLibrarySystem` — idempotent initial setup: creates the 4 sheets with correct headers on a blank spreadsheet; never overwrites existing data.
+- `migrateBookDbLayout` — idempotent one-time migration of 書籍DB from the old layout (A:書籍ID, B:書籍名, ...) to the new one (A:管理番号, B:ISBN, C:書籍名, ..., G:状態); `registerBook_` refuses to append to an old-layout sheet and points to this menu item.
 - `sendOverdueNotifications` — overdue email notifications; dedupes via a `最終通知日` column (located by header name, col ≥ I) and respects the daily MailApp quota. `installOverdueTrigger`/`removeOverdueTrigger` manage a daily 9:00 time-driven trigger (needs the `script.scriptapp` OAuth scope in appsscript.json).
 - `backupReturnedData` — archives returned rows to another spreadsheet; header-compatibility checks protect against appending to mismatched sheets and never clear existing backups.
 
