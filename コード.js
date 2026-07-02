@@ -92,6 +92,7 @@ function getWebAppUrl() {
  * 同時実行で二重貸出やデータ不整合が起きないよう、必ずこのヘルパー経由で実行する。
  * @param {Function} operation - ロック取得後に実行する処理
  * @param {*} busyResult - ロックを取得できなかった場合に呼び出し元へ返す値
+ *                         (Error インスタンスを渡した場合は返さずに throw する)
  * @return {*} operation の戻り値、またはロック取得失敗時は busyResult
  */
 function runWithScriptLock_(operation, busyResult) {
@@ -99,6 +100,9 @@ function runWithScriptLock_(operation, busyResult) {
   // 最大10秒待ってもロックが取れない場合は、他の処理が長時間実行中とみなして中断する
   if (!lock.tryLock(10000)) {
     console.warn("スクリプトロックを取得できませんでした。他の処理が実行中です。");
+    if (busyResult instanceof Error) {
+      throw busyResult;
+    }
     return busyResult;
   }
   try {
@@ -1825,6 +1829,13 @@ function getUserLendingHistory(userId) {
  * @return {boolean} 更新成功の可否
  */
 function updateUserInfo(userData) {
+  return runWithScriptLock_(
+    () => updateUserInfo_(userData),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function updateUserInfo_(userData) {
   if (!userData || !userData.userId) {
     throw new Error("利用者IDが指定されていません。");
   }
@@ -1876,6 +1887,13 @@ function updateUserInfo(userData) {
  * @return {boolean} 削除成功の可否
  */
 function deleteUser(userId) {
+  return runWithScriptLock_(
+    () => deleteUser_(userId),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function deleteUser_(userId) {
   if (!userId) {
     throw new Error("利用者IDが指定されていません。");
   }
@@ -2073,6 +2091,13 @@ function showBackupDialog() {
  * @return {object} 処理結果 {success: boolean, count: number, message: string}
  */
 function backupReturnedData(targetSpreadsheetId) {
+  return runWithScriptLock_(
+    () => backupReturnedData_(targetSpreadsheetId),
+    { success: false, count: 0, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function backupReturnedData_(targetSpreadsheetId) {
   try {
     // 現在のスプレッドシート（元データ）を取得
     const sourceSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -2524,6 +2549,13 @@ function getLibrarySettings() {
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function saveLibrarySettings(settings) {
+  return runWithScriptLock_(
+    () => saveLibrarySettings_(settings),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function saveLibrarySettings_(settings) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let settingsSheet = ss.getSheetByName("設定DB");
@@ -3442,6 +3474,13 @@ function getBookLendingHistory(bookId) {
  * @return {boolean} 更新成功の可否
  */
 function updateBookInfo(bookData) {
+  return runWithScriptLock_(
+    () => updateBookInfo_(bookData),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function updateBookInfo_(bookData) {
   if (!bookData || !bookData.bookId) {
     throw new Error("書籍IDが指定されていません。");
   }
@@ -3495,6 +3534,13 @@ function updateBookInfo(bookData) {
  * @return {boolean} 削除成功の可否
  */
 function deleteBook(bookId) {
+  return runWithScriptLock_(
+    () => deleteBook_(bookId),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function deleteBook_(bookId) {
   if (!bookId) {
     throw new Error("書籍IDが指定されていません。");
   }
