@@ -2922,8 +2922,20 @@ ${libraryName}管理システム
  * 図書館の設定情報を取得する関数
  * @return {object} 設定情報オブジェクト
  */
+// 設定キャッシュのキーとTTL(秒)。設定はシート読み込みが毎トランザクションで
+// 発生するためキャッシュする。saveLibrarySettings_ で無効化されるが、
+// 設定DBシートを直接編集した場合は最大TTL秒だけ古い値が使われる。
+const SETTINGS_CACHE_KEY = "librarySettings_v1";
+const SETTINGS_CACHE_TTL_SECONDS = 300;
+
 function getLibrarySettings() {
   try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(SETTINGS_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let settingsSheet = ss.getSheetByName("設定DB");
 
@@ -2983,8 +2995,9 @@ function getLibrarySettings() {
     }
     
     console.log("設定取得成功:", settings);
+    cache.put(SETTINGS_CACHE_KEY, JSON.stringify(settings), SETTINGS_CACHE_TTL_SECONDS);
     return settings;
-    
+
   } catch (error) {
     console.error(`設定の取得中にエラーが発生しました: ${error}`);
     throw new Error(`設定の取得に失敗しました: ${error.message}`);
@@ -3040,6 +3053,9 @@ function saveLibrarySettings_(settings) {
       }
     }
     
+    // 保存した設定が即座に反映されるようキャッシュを無効化
+    CacheService.getScriptCache().remove(SETTINGS_CACHE_KEY);
+
     console.log("設定保存成功:", settings);
     return { success: true, message: "設定を保存しました。" };
     
