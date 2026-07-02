@@ -116,6 +116,58 @@ function runWithScriptLock_(operation, busyResult) {
 const LOCK_BUSY_MESSAGE = "他の貸出・返却処理が実行中です。しばらく待ってから再度お試しください。";
 
 /**
+ * ISBNの形式を検証する共通関数
+ * ハイフン・空白を除去した上で、ISBN-10(9桁+数字またはX)または
+ * ISBN-13(13桁・チェックディジット検証付き)として妥当か判定する。
+ * @param {string} isbn - 検証するISBN
+ * @return {boolean} 妥当なら true
+ */
+function isValidIsbn_(isbn) {
+  if (!isbn) return false;
+  const normalized = isbn.toString().replace(/[-\s]/g, "");
+  if (/^\d{9}[\dXx]$/.test(normalized)) {
+    return true; // ISBN-10 (チェックディジットは形式のみ確認)
+  }
+  if (/^\d{13}$/.test(normalized)) {
+    // ISBN-13 のチェックディジット検証
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(normalized[i], 10) * (i % 2 === 0 ? 1 : 3);
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return checkDigit === parseInt(normalized[12], 10);
+  }
+  return false;
+}
+
+/**
+ * 必須項目の存在を検証する共通関数
+ * @param {object} obj - 検証対象オブジェクト
+ * @param {Object<string,string>} fields - {プロパティ名: 表示名} の対応
+ * @return {string[]} 不足している項目の表示名の配列(不足なしなら空配列)
+ */
+function validateRequired_(obj, fields) {
+  const missing = [];
+  for (const [key, label] of Object.entries(fields)) {
+    const value = obj ? obj[key] : null;
+    if (value === undefined || value === null || value.toString().trim() === "") {
+      missing.push(label);
+    }
+  }
+  return missing;
+}
+
+/**
+ * メールアドレスの形式を簡易検証する共通関数
+ * @param {string} email - 検証するメールアドレス
+ * @return {boolean} 妥当なら true
+ */
+function isValidEmail_(email) {
+  if (!email) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.toString().trim());
+}
+
+/**
  * 利用可能な書籍を取得する関数（複数冊管理対応）
  * @param {string} isbn - ISBN
  * @return {object|null} 利用可能な書籍情報（在庫がある最初の本）
@@ -303,7 +355,7 @@ function getUserInfo(userId) {
 function processLendingForm(formData) {
   return runWithScriptLock_(
     () => processLendingForm_(formData),
-    `登録失敗: ${LOCK_BUSY_MESSAGE}`
+    { success: false, message: LOCK_BUSY_MESSAGE }
   );
 }
 
@@ -384,13 +436,16 @@ function processLendingForm_(formData) {
     // 書籍DBの状態を「貸出中」に更新（複数冊管理対応）
     updateBookStatus(formData.bookId, "貸出中");
 
-    return `貸出登録成功: ${formData.bookTitle} を ${formData.userName} さんに貸し出しました。`;
+    return {
+      success: true,
+      message: `貸出登録成功: ${formData.bookTitle} を ${formData.userName} さんに貸し出しました。`
+    };
 
   } catch (error) {
     console.error(`貸出情報の記録中にエラーが発生しました: ${error}`);
     console.error(error); // スタックトレースも出力
     // クライアントにエラーメッセージを返す
-    return `登録失敗: ${error.message}`;
+    return { success: false, message: `登録失敗: ${error.message}` };
   }
 }
 
@@ -492,7 +547,7 @@ function getLendingInfo(bookId) { // Changed parameter name
 function processReturnForm(bookId) { // Changed parameter name
   return runWithScriptLock_(
     () => processReturnForm_(bookId),
-    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}`, logs: ["スクリプトロックを取得できませんでした。"] }
+    { success: false, message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}`, logs: ["スクリプトロックを取得できませんでした。"] }
   );
 }
 
@@ -501,9 +556,10 @@ function processReturnForm_(bookId) {
   const logs = [];
   
   if (!bookId) {
-    return { 
-      message: "返却処理失敗: 書籍IDが指定されていません。", 
-      logs: ["書籍IDが指定されていません。"] 
+    return {
+      success: false,
+      message: "返却処理失敗: 書籍IDが指定されていません。",
+      logs: ["書籍IDが指定されていません。"]
     };
   }
   
@@ -591,7 +647,8 @@ function processReturnForm_(bookId) {
         console.log(successMsg);
         Logger.log(`デバッグ\t${successMsg}`);
         recordFound = true;
-        return { 
+        return {
+          success: true,
           message: `返却処理成功: ${bookTitle} を返却しました。`,
           logs: logs
         };
@@ -636,7 +693,8 @@ function processReturnForm_(bookId) {
       const notFoundMsg = `書籍ID ${bookId} の未返却の貸出記録が見つかりませんでした。`;
       logs.push(notFoundMsg);
       console.warn(notFoundMsg);
-      return { 
+      return {
+        success: false,
         message: `返却処理失敗: この本の未返却の貸出記録が見つかりませんでした。書籍IDを確認してください。`,
         logs: logs
       };
@@ -647,7 +705,8 @@ function processReturnForm_(bookId) {
     logs.push(errorMsg);
     console.error(errorMsg);
     console.error(error);
-    return { 
+    return {
+      success: false,
       message: `返却処理失敗: ${error.message}`,
       logs: logs
     };
@@ -961,7 +1020,7 @@ function markBooksAsAvailable_(bookIds) {
 function processBulkReturnByRowNumbers(records) {
   return runWithScriptLock_(
     () => processBulkReturnByRowNumbers_(records),
-    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+    { success: false, message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
   );
 }
 
@@ -972,7 +1031,7 @@ function processBulkReturnByRowNumbers_(records) {
   const errorMessages = [];
 
   if (!Array.isArray(records) || records.length === 0) {
-    return { message: "返却処理失敗: 書籍が指定されていません。" };
+    return { success: false, message: "返却処理失敗: 書籍が指定されていません。" };
   }
 
   try {
@@ -1020,7 +1079,8 @@ function processBulkReturnByRowNumbers_(records) {
     }
 
     console.log("一括返却処理完了:", message);
-    return { 
+    return {
+      success: successCount > 0,
       message: message,
       successCount: successCount,
       errorCount: errorCount,
@@ -1031,7 +1091,7 @@ function processBulkReturnByRowNumbers_(records) {
     const errorMsg = `一括返却処理中にエラーが発生しました: ${error}`;
     console.error(errorMsg);
     console.error(error);
-    return { message: `返却処理失敗: ${error.message}` };
+    return { success: false, message: `返却処理失敗: ${error.message}` };
   }
 }
 
@@ -1043,7 +1103,7 @@ function processBulkReturnByRowNumbers_(records) {
 function processBulkReturnWithDetails(bookRecords) {
   return runWithScriptLock_(
     () => processBulkReturnWithDetails_(bookRecords),
-    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+    { success: false, message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
   );
 }
 
@@ -1058,7 +1118,7 @@ function processBulkReturnWithDetails_(bookRecords) {
   const errorMessages = [];
 
   if (!Array.isArray(bookRecords) || bookRecords.length === 0) {
-    return { message: "返却処理失敗: 書籍が指定されていません。" };
+    return { success: false, message: "返却処理失敗: 書籍が指定されていません。" };
   }
 
   try {
@@ -1165,7 +1225,8 @@ function processBulkReturnWithDetails_(bookRecords) {
     }
 
     console.log("一括返却処理完了:", message);
-    return { 
+    return {
+      success: successCount > 0,
       message: message,
       successCount: successCount,
       notFoundIds: notFoundIds,
@@ -1176,7 +1237,7 @@ function processBulkReturnWithDetails_(bookRecords) {
     const errorMsg = `一括返却処理中にエラーが発生しました: ${error}`;
     console.error(errorMsg);
     console.error(error);
-    return { message: `返却処理失敗: ${error.message}` };
+    return { success: false, message: `返却処理失敗: ${error.message}` };
   }
 }
 
@@ -1184,7 +1245,7 @@ function processBulkReturnWithDetails_(bookRecords) {
 function processBulkReturn(bookIds) {
   return runWithScriptLock_(
     () => processBulkReturn_(bookIds),
-    { message: `一括返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+    { success: false, message: `一括返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
   );
 }
 
@@ -1199,7 +1260,7 @@ function processBulkReturn_(bookIds) {
   const errorMessages = [];
 
   if (!Array.isArray(bookIds) || bookIds.length === 0) {
-    return { message: "返却処理失敗: 書籍IDが指定されていません。" };
+    return { success: false, message: "返却処理失敗: 書籍IDが指定されていません。" };
   }
 
   try {
@@ -1307,12 +1368,12 @@ function processBulkReturn_(bookIds) {
       message += ` ${errorCount}件の更新中にエラーが発生しました。`;
     }
 
-    return { message: message };
+    return { success: successCount > 0, message: message };
 
   } catch (error) {
     console.error(`一括返却処理中にエラーが発生しました: ${error}`);
     console.error(error);
-    return { message: `一括返却処理失敗: ${error.message}` };
+    return { success: false, message: `一括返却処理失敗: ${error.message}` };
   }
 }
 
@@ -1325,7 +1386,7 @@ function processBulkReturn_(bookIds) {
 function processBulkLending(bulkData) {
   return runWithScriptLock_(
     () => processBulkLending_(bulkData),
-    `一括貸出失敗: ${LOCK_BUSY_MESSAGE}`
+    { success: false, message: LOCK_BUSY_MESSAGE, successCount: 0, errorCount: 0 }
   );
 }
 
@@ -1482,21 +1543,35 @@ function processBulkLending_(bulkData) {
       });
     }
 
-    // 全件失敗の場合はメッセージに「成功」を含めない
-    // (lending.html は response.includes("成功") で成否判定しているため)
+    // 構造化された結果を返す(クライアントは success フラグで成否判定する)
     if (successCount === 0 && errorCount > 0) {
-      return `一括貸出登録失敗: すべての書籍を貸出できませんでした。${errorMessages.join(', ')}`;
+      return {
+        success: false,
+        message: `一括貸出登録失敗: すべての書籍を貸出できませんでした。${errorMessages.join(', ')}`,
+        successCount: successCount,
+        errorCount: errorCount
+      };
     }
     if (errorCount > 0) {
-      return `貸出登録完了 (${successCount}件成功、${errorCount}件失敗)。失敗した書籍ID: ${errorMessages.join(', ')}`;
+      return {
+        success: true,
+        message: `貸出登録完了 (${successCount}件成功、${errorCount}件失敗)。失敗した書籍ID: ${errorMessages.join(', ')}`,
+        successCount: successCount,
+        errorCount: errorCount
+      };
     }
-    return `${successCount}件の貸出登録に成功しました。`;
+    return {
+      success: true,
+      message: `${successCount}件の貸出登録に成功しました。`,
+      successCount: successCount,
+      errorCount: 0
+    };
 
   } catch (error) {
     console.error(`一括貸出処理中にエラーが発生しました: ${error}`);
     console.error(error); // スタックトレースも出力
     // クライアントにエラーメッセージを返す
-    return `一括貸出登録失敗: ${error.message}`;
+    return { success: false, message: `一括貸出登録失敗: ${error.message}`, successCount: 0, errorCount: 0 };
   }
 }
 
@@ -1667,10 +1742,19 @@ function registerBook(bookData) {
 function registerBook_(bookData) {
   console.log("registerBook関数が呼び出されました:", JSON.stringify(bookData));
   
-  if (!bookData || !bookData.isbn || !bookData.title) {
-    return { success: false, message: "書籍IDと書籍名は必須です。" };
+  const missing = validateRequired_(bookData, { isbn: "書籍ID(ISBN)", title: "書籍名" });
+  if (missing.length > 0) {
+    return { success: false, message: `次の必須項目が入力されていません: ${missing.join("、")}` };
   }
-  
+  if (!isValidIsbn_(bookData.isbn)) {
+    return { success: false, message: `ISBNの形式が正しくありません: ${bookData.isbn}(10桁または13桁のISBNを入力してください)` };
+  }
+  const quantityNum = parseInt(bookData.quantity, 10);
+  if (bookData.quantity !== undefined && bookData.quantity !== null && bookData.quantity !== "" &&
+      (isNaN(quantityNum) || quantityNum < 1 || quantityNum > 100)) {
+    return { success: false, message: "登録冊数は1〜100の数値で指定してください。" };
+  }
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const bookSheet = ss.getSheetByName("書籍DB");
@@ -2582,8 +2666,12 @@ function registerUser(userData) {
 }
 
 function registerUser_(userData) {
-  if (!userData || !userData.userName || !userData.userAddress) {
-    return { success: false, message: "氏名と住所は必須です。" };
+  const missing = validateRequired_(userData, { userName: "氏名", userAddress: "住所" });
+  if (missing.length > 0) {
+    return { success: false, message: `次の必須項目が入力されていません: ${missing.join("、")}` };
+  }
+  if (userData.userEmail && !isValidEmail_(userData.userEmail)) {
+    return { success: false, message: `メールアドレスの形式が正しくありません: ${userData.userEmail}` };
   }
 
   try {
