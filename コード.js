@@ -87,6 +87,35 @@ function getWebAppUrl() {
 }
 
 /**
+ * スクリプトロックを取得して処理を実行する共通ヘルパー
+ * 貸出・返却・登録などスプレッドシートを更新する処理は、複数端末からの
+ * 同時実行で二重貸出やデータ不整合が起きないよう、必ずこのヘルパー経由で実行する。
+ * @param {Function} operation - ロック取得後に実行する処理
+ * @param {*} busyResult - ロックを取得できなかった場合に呼び出し元へ返す値
+ *                         (Error インスタンスを渡した場合は返さずに throw する)
+ * @return {*} operation の戻り値、またはロック取得失敗時は busyResult
+ */
+function runWithScriptLock_(operation, busyResult) {
+  const lock = LockService.getScriptLock();
+  // 最大10秒待ってもロックが取れない場合は、他の処理が長時間実行中とみなして中断する
+  if (!lock.tryLock(10000)) {
+    console.warn("スクリプトロックを取得できませんでした。他の処理が実行中です。");
+    if (busyResult instanceof Error) {
+      throw busyResult;
+    }
+    return busyResult;
+  }
+  try {
+    return operation();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ロック取得失敗時にユーザーへ返す共通メッセージ */
+const LOCK_BUSY_MESSAGE = "他の貸出・返却処理が実行中です。しばらく待ってから再度お試しください。";
+
+/**
  * 利用可能な書籍を取得する関数（複数冊管理対応）
  * @param {string} isbn - ISBN
  * @return {object|null} 利用可能な書籍情報（在庫がある最初の本）
@@ -272,6 +301,13 @@ function getUserInfo(userId) {
  * @return {string} 処理結果メッセージ
  */
 function processLendingForm(formData) {
+  return runWithScriptLock_(
+    () => processLendingForm_(formData),
+    `登録失敗: ${LOCK_BUSY_MESSAGE}`
+  );
+}
+
+function processLendingForm_(formData) {
   console.log("貸出フォームデータ受信:", formData);
   try {
     // 入力チェック
@@ -301,6 +337,17 @@ function processLendingForm(formData) {
     
     if (bookInfo.status === "貸出中") {
       throw new Error("この書籍は既に貸出中です。");
+    }
+
+    // 貸出記録側にも未返却レコードがないか確認する
+    // (過去データで書籍DBの状態が「在庫」のまま貸出中の本による二重貸出を防ぐ)
+    const lendingData = lendingSheet.getDataRange().getValues();
+    const targetBookId = formData.bookId.toString().trim();
+    for (let i = 1; i < lendingData.length; i++) {
+      const rowBookId = lendingData[i][0] ? lendingData[i][0].toString().trim() : "";
+      if (rowBookId === targetBookId && lendingData[i][6] === "未返却") {
+        throw new Error("この書籍には未返却の貸出記録があります。先に返却処理を行ってください。");
+      }
     }
 
     const lendingDate = new Date(); // 現在日時を貸出日時とする
@@ -443,6 +490,13 @@ function getLendingInfo(bookId) { // Changed parameter name
  * @return {object} 処理結果メッセージとログ情報を含むオブジェクト
  */
 function processReturnForm(bookId) { // Changed parameter name
+  return runWithScriptLock_(
+    () => processReturnForm_(bookId),
+    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}`, logs: ["スクリプトロックを取得できませんでした。"] }
+  );
+}
+
+function processReturnForm_(bookId) {
   // ログを収集するための配列
   const logs = [];
   
@@ -888,7 +942,30 @@ function findRentalRecords(bookId) {
  * @param {Array} records - 返却する書籍の行番号配列 [{rowNumber: number, bookId: string}, ...]
  * @return {Object} 処理結果とメッセージ
  */
+/**
+ * 返却された書籍の書籍DB状態を「在庫」に戻す補助関数
+ * 貸出記録側の返却処理は既に成功しているため、状態更新の失敗はログに留めて処理を継続する。
+ * @param {string[]} bookIds - 返却された書籍ID(管理番号)の配列
+ */
+function markBooksAsAvailable_(bookIds) {
+  const uniqueIds = [...new Set(bookIds.filter(id => id))];
+  uniqueIds.forEach(bookId => {
+    try {
+      updateBookStatus(bookId, "在庫");
+    } catch (e) {
+      console.error(`書籍DBの状態更新に失敗しました (ID: ${bookId}): ${e}`);
+    }
+  });
+}
+
 function processBulkReturnByRowNumbers(records) {
+  return runWithScriptLock_(
+    () => processBulkReturnByRowNumbers_(records),
+    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+  );
+}
+
+function processBulkReturnByRowNumbers_(records) {
   console.log("一括返却データ受信（行番号版）:", records);
   let successCount = 0;
   let errorCount = 0;
@@ -911,15 +988,17 @@ function processBulkReturnByRowNumbers(records) {
 
     // 行番号でソート（大きい順）して、行の削除や更新で番号がずれないようにする
     const sortedRecords = records.sort((a, b) => b.rowNumber - a.rowNumber);
+    const returnedBookIds = [];
 
     sortedRecords.forEach(record => {
       const { rowNumber, bookId } = record;
-      
+
       try {
         // 行番号を使用して直接セルを更新
         lendingSheet.getRange(rowNumber, statusColIndex).setValue("返却済");
         lendingSheet.getRange(rowNumber, returnDateColIndex).setValue(currentDate);
         successCount++;
+        returnedBookIds.push(bookId);
         console.log(`返却処理完了: 書籍ID=${bookId} (行 ${rowNumber})`);
       } catch (e) {
         errorCount++;
@@ -927,6 +1006,9 @@ function processBulkReturnByRowNumbers(records) {
         console.error(`行 ${rowNumber} の更新エラー:`, e);
       }
     });
+
+    // 書籍DBの状態を「在庫」に戻す
+    markBooksAsAvailable_(returnedBookIds);
 
     // 結果メッセージを生成
     let message = "";
@@ -959,6 +1041,13 @@ function processBulkReturnByRowNumbers(records) {
  * @return {Object} 処理結果とメッセージ
  */
 function processBulkReturnWithDetails(bookRecords) {
+  return runWithScriptLock_(
+    () => processBulkReturnWithDetails_(bookRecords),
+    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+  );
+}
+
+function processBulkReturnWithDetails_(bookRecords) {
   console.log("一括返却データ受信（詳細版）:", bookRecords);
   let successCount = 0;
   let notFoundCount = 0;
@@ -1020,7 +1109,7 @@ function processBulkReturnWithDetails(bookRecords) {
           if (dateMatch || (!lendingDate && !rowLendingDate)) {
             recordFound = true;
             // 更新リストに追加
-            updates.push({ row: i + 1, col: statusColIndex + 1, value: "返却済" });
+            updates.push({ row: i + 1, col: statusColIndex + 1, value: "返却済", bookId: bookId });
             updates.push({ row: i + 1, col: returnDateColIndex + 1, value: currentDate });
             successCount++;
             console.log(`返却処理準備完了: 書籍ID=${bookId}, 利用者ID=${userId} (行 ${i + 1})`);
@@ -1037,10 +1126,14 @@ function processBulkReturnWithDetails(bookRecords) {
     });
 
     // まとめて更新
+    const returnedBookIds = [];
     if (updates.length > 0) {
       updates.forEach(update => {
         try {
           lendingSheet.getRange(update.row, update.col).setValue(update.value);
+          if (update.bookId) {
+            returnedBookIds.push(update.bookId);
+          }
         } catch (e) {
           console.error(`行 ${update.row}, 列 ${update.col} の更新中にエラー: ${e}`);
           errorCount++;
@@ -1048,6 +1141,9 @@ function processBulkReturnWithDetails(bookRecords) {
         }
       });
     }
+
+    // 書籍DBの状態を「在庫」に戻す
+    markBooksAsAvailable_(returnedBookIds);
 
     // 結果メッセージを生成
     let message = "";
@@ -1086,6 +1182,13 @@ function processBulkReturnWithDetails(bookRecords) {
 
 // 既存の関数（互換性のため残す）
 function processBulkReturn(bookIds) {
+  return runWithScriptLock_(
+    () => processBulkReturn_(bookIds),
+    { message: `一括返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+  );
+}
+
+function processBulkReturn_(bookIds) {
   console.log("一括返却データ受信:", bookIds);
   let successCount = 0;
   let notFoundCount = 0;
@@ -1146,7 +1249,7 @@ function processBulkReturn(bookIds) {
 
           if (rowStatus === "未返却") {
             // 更新リストに追加
-            updates.push({ row: rowIndex, col: statusColIndex + 1, value: "返却済" });
+            updates.push({ row: rowIndex, col: statusColIndex + 1, value: "返却済", bookId: trimmedBookId });
             updates.push({ row: rowIndex, col: returnDateColIndex + 1, value: currentDate });
             successCount++;
             console.log(`返却処理準備完了: 書籍ID=${trimmedBookId} (行 ${rowIndex})`);
@@ -1165,10 +1268,14 @@ function processBulkReturn(bookIds) {
     });
 
     // まとめて更新 (GASのAPI呼び出し回数を減らすため)
+    const returnedBookIds = [];
     if (updates.length > 0) {
       updates.forEach(update => {
         try {
           lendingSheet.getRange(update.row, update.col).setValue(update.value);
+          if (update.bookId) {
+            returnedBookIds.push(update.bookId);
+          }
         } catch (e) {
            // 個別の更新エラー処理
            console.error(`行 ${update.row}, 列 ${update.col} の更新中にエラー: ${e}`);
@@ -1184,6 +1291,9 @@ function processBulkReturn(bookIds) {
       });
       console.log(`${successCount}件の返却処理を更新しました。`);
     }
+
+    // 書籍DBの状態を「在庫」に戻す
+    markBooksAsAvailable_(returnedBookIds);
 
     // 結果メッセージの組み立て
     let message = `${successCount}件の返却処理に成功しました。`;
@@ -1213,6 +1323,13 @@ function processBulkReturn(bookIds) {
  * @return {string} 処理結果メッセージ
  */
 function processBulkLending(bulkData) {
+  return runWithScriptLock_(
+    () => processBulkLending_(bulkData),
+    `一括貸出失敗: ${LOCK_BUSY_MESSAGE}`
+  );
+}
+
+function processBulkLending_(bulkData) {
   console.log("一括貸出データ受信:", bulkData);
   let successCount = 0;
   let errorCount = 0;
@@ -1234,13 +1351,41 @@ function processBulkLending(bulkData) {
     }
 
     // 書籍DBの情報を先に読み込んでおく（効率化のため）
+    // 新レイアウト: A=管理番号, B=ISBN, C=書籍名, G=状態 / 旧レイアウト: A=書籍ID, B=書籍名
     const bookData = bookSheet.getDataRange().getValues();
-    const bookMap = new Map(); // 書籍IDをキー、書籍名を値とするMap
+    const isNewLayout = bookData.length > 0 && bookData[0][0] === "管理番号";
+    const titleColIndex = isNewLayout ? 2 : 1;
+    const bookMap = new Map(); // 管理番号をキー、{title, status, rowNumber} を値とするMap
+    const copiesByIsbn = new Map(); // ISBNをキー、同一ISBNの蔵書 [{managementNumber, entry}] を値とするMap
     for (let i = 1; i < bookData.length; i++) {
       const bookId = bookData[i][0] ? bookData[i][0].toString().trim() : null;
-      const bookTitle = bookData[i][1] || "タイトル不明";
       if (bookId) {
-        bookMap.set(bookId, bookTitle);
+        const entry = {
+          title: bookData[i][titleColIndex] || "タイトル不明",
+          status: isNewLayout ? (bookData[i][6] || "在庫") : "在庫",
+          rowNumber: i + 1
+        };
+        bookMap.set(bookId, entry);
+        // 新レイアウトではISBN(B列)でも検索できるようにする(getBookDetails と同じ挙動)
+        if (isNewLayout && bookData[i][1]) {
+          const isbn = bookData[i][1].toString().trim();
+          if (isbn) {
+            if (!copiesByIsbn.has(isbn)) {
+              copiesByIsbn.set(isbn, []);
+            }
+            copiesByIsbn.get(isbn).push({ managementNumber: bookId, entry: entry });
+          }
+        }
+      }
+    }
+
+    // 貸出記録から未返却の書籍IDを収集する
+    // (旧レイアウトや過去データで書籍DBのG列が「在庫」のまま貸出中の本があっても二重貸出を防ぐ)
+    const lendingData = lendingSheet.getDataRange().getValues();
+    const activeLoanIds = new Set();
+    for (let i = 1; i < lendingData.length; i++) {
+      if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
+        activeLoanIds.add(lendingData[i][0].toString().trim());
       }
     }
 
@@ -1260,38 +1405,92 @@ function processBulkLending(bulkData) {
     const returnStatus = "未返却"; // 初期状態
 
     const rowsToAdd = [];
+    const rowsToMarkLent = []; // 貸出中に更新する書籍DBの行番号
 
     bulkData.bookIds.forEach(bookId => {
       const trimmedBookId = bookId.trim();
       if (!trimmedBookId) return; // 空のIDはスキップ
 
-      const bookTitle = bookMap.get(trimmedBookId) || "タイトル不明（DB未登録）";
+      let book = bookMap.get(trimmedBookId);
+      let lendId = trimmedBookId; // 実際に貸出記録へ書き込むID(管理番号)
 
-      // スプレッドシートに追加するデータ配列
+      // 管理番号で見つからない場合はISBNとして解釈し、貸出可能なコピーを探す
+      if (!book && copiesByIsbn.has(trimmedBookId)) {
+        const availableCopy = copiesByIsbn.get(trimmedBookId).find(copy =>
+          copy.entry.status === "在庫" && !activeLoanIds.has(copy.managementNumber)
+        );
+        if (!availableCopy) {
+          errorCount++;
+          errorMessages.push(`${trimmedBookId}（在庫なし）`);
+          console.warn(`貸出スキップ: ISBN ${trimmedBookId} に貸出可能な在庫がありません。`);
+          return;
+        }
+        book = availableCopy.entry;
+        lendId = availableCopy.managementNumber;
+        console.log(`ISBN ${trimmedBookId} の在庫コピー ${lendId} を貸出対象に選択しました。`);
+      }
+
+      // 在庫チェック: DB未登録・貸出中の本は貸し出さない（二重貸出防止）
+      if (!book) {
+        errorCount++;
+        errorMessages.push(`${trimmedBookId}（DB未登録）`);
+        console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} はDBに登録されていません。`);
+        return;
+      }
+      if (book.status !== "在庫") {
+        errorCount++;
+        errorMessages.push(`${trimmedBookId}（${book.status}）`);
+        console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} は「${book.status}」のため貸出できません。`);
+        return;
+      }
+      if (activeLoanIds.has(lendId)) {
+        errorCount++;
+        errorMessages.push(`${lendId}（未返却の貸出記録あり）`);
+        console.warn(`貸出スキップ: 書籍ID ${lendId} には未返却の貸出記録が存在します。`);
+        return;
+      }
+
+      // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
+      book.status = "貸出中";
+      activeLoanIds.add(lendId);
+
+      // スプレッドシートに追加するデータ配列(貸出記録には管理番号を記録する)
       rowsToAdd.push([
-        trimmedBookId,
-        bookTitle,
+        lendId,
+        book.title,
         bulkData.userId,
         bulkData.userName,
         lendingDate,
         dueDate,
         returnStatus
       ]);
+      if (isNewLayout) {
+        rowsToMarkLent.push(book.rowNumber);
+      }
       successCount++;
-      console.log(`貸出準備完了: ${bookTitle} (ID: ${trimmedBookId})`);
+      console.log(`貸出準備完了: ${book.title} (ID: ${lendId})`);
     });
 
     // まとめて追記
     if (rowsToAdd.length > 0) {
       lendingSheet.getRange(lendingSheet.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
       console.log(`${successCount}件の貸出記録を追加しました。`);
+
+      // 書籍DBの状態を「貸出中」に更新（G列）
+      rowsToMarkLent.forEach(rowNumber => {
+        bookSheet.getRange(rowNumber, 7).setValue("貸出中");
+      });
     }
 
+    // 全件失敗の場合はメッセージに「成功」を含めない
+    // (lending.html は response.includes("成功") で成否判定しているため)
+    if (successCount === 0 && errorCount > 0) {
+      return `一括貸出登録失敗: すべての書籍を貸出できませんでした。${errorMessages.join(', ')}`;
+    }
     if (errorCount > 0) {
       return `貸出登録完了 (${successCount}件成功、${errorCount}件失敗)。失敗した書籍ID: ${errorMessages.join(', ')}`;
-    } else {
-      return `${successCount}件の貸出登録に成功しました。`;
     }
+    return `${successCount}件の貸出登録に成功しました。`;
 
   } catch (error) {
     console.error(`一括貸出処理中にエラーが発生しました: ${error}`);
@@ -1459,6 +1658,13 @@ function fetchBookInfo(isbn) {
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function registerBook(bookData) {
+  return runWithScriptLock_(
+    () => registerBook_(bookData),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function registerBook_(bookData) {
   console.log("registerBook関数が呼び出されました:", JSON.stringify(bookData));
   
   if (!bookData || !bookData.isbn || !bookData.title) {
@@ -1751,6 +1957,13 @@ function getUserLendingHistory(userId) {
  * @return {boolean} 更新成功の可否
  */
 function updateUserInfo(userData) {
+  return runWithScriptLock_(
+    () => updateUserInfo_(userData),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function updateUserInfo_(userData) {
   if (!userData || !userData.userId) {
     throw new Error("利用者IDが指定されていません。");
   }
@@ -1802,6 +2015,13 @@ function updateUserInfo(userData) {
  * @return {boolean} 削除成功の可否
  */
 function deleteUser(userId) {
+  return runWithScriptLock_(
+    () => deleteUser_(userId),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function deleteUser_(userId) {
   if (!userId) {
     throw new Error("利用者IDが指定されていません。");
   }
@@ -2083,6 +2303,13 @@ function showBackupDialog() {
  * @return {object} 処理結果 {success: boolean, count: number, message: string}
  */
 function backupReturnedData(targetSpreadsheetId) {
+  return runWithScriptLock_(
+    () => backupReturnedData_(targetSpreadsheetId),
+    { success: false, count: 0, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function backupReturnedData_(targetSpreadsheetId) {
   try {
     // 現在のスプレッドシート（元データ）を取得
     const sourceSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -2348,18 +2575,36 @@ function generateNewUserId() {
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function registerUser(userData) {
+  return runWithScriptLock_(
+    () => registerUser_(userData),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function registerUser_(userData) {
   if (!userData || !userData.userName || !userData.userAddress) {
     return { success: false, message: "氏名と住所は必須です。" };
   }
-  
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const userSheet = ss.getSheetByName("利用者DB");
-    
+
     if (!userSheet) {
       return { success: false, message: "利用者DBシートが見つかりません。" };
     }
-    
+
+    // 利用者IDの重複チェック（クライアント側でIDを採番してから登録するまでの間に
+    // 別端末が同じIDで登録している可能性があるため、ロック内で再採番する）
+    if (userData.userId) {
+      const existingIds = userSheet.getDataRange().getValues()
+        .slice(1)
+        .map(row => (row[0] || "").toString().trim());
+      if (existingIds.includes(userData.userId.toString().trim())) {
+        userData.userId = generateNewUserId();
+      }
+    }
+
     // 新しい行を追加
     const newRow = [
       userData.userId,
@@ -2519,6 +2764,13 @@ function getLibrarySettings() {
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function saveLibrarySettings(settings) {
+  return runWithScriptLock_(
+    () => saveLibrarySettings_(settings),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function saveLibrarySettings_(settings) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let settingsSheet = ss.getSheetByName("設定DB");
@@ -3437,6 +3689,13 @@ function getBookLendingHistory(bookId) {
  * @return {boolean} 更新成功の可否
  */
 function updateBookInfo(bookData) {
+  return runWithScriptLock_(
+    () => updateBookInfo_(bookData),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function updateBookInfo_(bookData) {
   if (!bookData || !bookData.bookId) {
     throw new Error("書籍IDが指定されていません。");
   }
@@ -3490,6 +3749,13 @@ function updateBookInfo(bookData) {
  * @return {boolean} 削除成功の可否
  */
 function deleteBook(bookId) {
+  return runWithScriptLock_(
+    () => deleteBook_(bookId),
+    new Error(LOCK_BUSY_MESSAGE)
+  );
+}
+
+function deleteBook_(bookId) {
   if (!bookId) {
     throw new Error("書籍IDが指定されていません。");
   }
