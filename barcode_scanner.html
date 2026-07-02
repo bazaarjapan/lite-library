@@ -252,6 +252,8 @@
   <header>
     <h1>${escapeHtml(popupConfig.title)}</h1>
     <div>
+      <button type="button" id="zoom-out" style="display:none">−</button>
+      <button type="button" id="zoom-in" style="display:none">＋</button>
       <button type="button" id="switch-camera">切替</button>
       <button type="button" id="close-window">閉じる</button>
     </div>
@@ -328,15 +330,20 @@
           constraints: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
-            facingMode: { ideal: facingMode }
+            facingMode: { ideal: facingMode },
+            // 対応カメラでは近接時のピンボケを防ぐ(非対応環境では無視される)
+            advanced: [{ focusMode: 'continuous' }]
           },
           area: { top: '36%', right: '8%', left: '8%', bottom: '36%' }
         },
         locator: {
           patchSize: 'medium',
-          halfSample: true
+          // 解析解像度を落とさない(書籍ISBNのような細かいコードの認識率を優先)
+          halfSample: false
         },
-        numOfWorkers: navigator.hardwareConcurrency ? Math.min(4, navigator.hardwareConcurrency) : 2,
+        // blob URLページからのWeb Worker生成は失敗することがあり、その場合
+        // フレーム解析が一切走らなくなるためメインスレッドで処理する
+        numOfWorkers: 0,
         frequency: 10,
         decoder: {
           readers: config.readers || []
@@ -353,6 +360,7 @@
         Quagga.start();
         setMessage(config.label + 'のバーコードを枠内に合わせてください。');
         post('ready');
+        setupZoomControls();
       });
 
       Quagga.onDetected(function(result) {
@@ -371,6 +379,46 @@
         post('detected', { code: code });
         setTimeout(function() { window.close(); }, 150);
       });
+    }
+
+    // カメラがズームに対応している場合のみ +/− ボタンを表示する
+    // (小さいバーコードを狙いやすくする。非対応カメラではボタン非表示のまま)
+    function setupZoomControls() {
+      var zoomInButton = document.getElementById('zoom-in');
+      var zoomOutButton = document.getElementById('zoom-out');
+      zoomInButton.style.display = 'none';
+      zoomOutButton.style.display = 'none';
+
+      var video = document.querySelector('#viewport video');
+      var stream = video && video.srcObject;
+      var track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+      if (!track || typeof track.getCapabilities !== 'function') return;
+
+      var capabilities;
+      try {
+        capabilities = track.getCapabilities();
+      } catch (e) {
+        return;
+      }
+      if (!capabilities || !capabilities.zoom || capabilities.zoom.max <= capabilities.zoom.min) return;
+
+      var range = capabilities.zoom;
+      var step = range.step && range.step > 0 ? range.step : (range.max - range.min) / 10;
+      var current = range.min;
+      if (typeof track.getSettings === 'function' && track.getSettings().zoom) {
+        current = track.getSettings().zoom;
+      }
+
+      function applyZoom(value) {
+        current = Math.min(range.max, Math.max(range.min, value));
+        track.applyConstraints({ advanced: [{ zoom: current }] }).catch(function() {});
+      }
+
+      zoomInButton.style.display = '';
+      zoomOutButton.style.display = '';
+      // カメラ切替のたびに再セットアップされるため、多重登録されないonclick代入にする
+      zoomInButton.onclick = function() { applyZoom(current + step * 2); };
+      zoomOutButton.onclick = function() { applyZoom(current - step * 2); };
     }
 
     document.getElementById('switch-camera').addEventListener('click', function() {
