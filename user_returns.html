@@ -584,8 +584,7 @@
       </div>
     </div>
 
-    <!-- バーコード読み取りライブラリ (QuaggaJSを使用) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <!-- バーコード読み取りは共通スキャナー部品で処理 -->
     <script>
       let isScanning = false;
       let currentUserName = '';
@@ -1093,6 +1092,29 @@
           startScanner(viewportId, inputFieldId);
         }, 300);
       }
+    </script>
+    <?!= includeHtml_('barcode_scanner'); ?>
+    <script>
+      LiteLibraryBarcodeScanner.configure({
+        contexts: {
+          'interactive': {
+            inputFieldId: 'user-id',
+            label: '利用者ID',
+            title: '利用者IDをスキャン',
+            readers: ['code_128_reader', 'code_39_reader', 'code_93_reader', 'codabar_reader']
+          }
+        },
+        onOpen: function() {
+          isScanning = true;
+          setMessage('利用者IDスキャン用ウィンドウを開いています...');
+        },
+        onClose: function() {
+          isScanning = false;
+        },
+        onScan: function() {
+          searchUserRentals();
+        }
+      });
     </script>
     <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
     <script>

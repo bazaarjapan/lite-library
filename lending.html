@@ -649,8 +649,7 @@
 
     </div>
 
-    <!-- バーコード読み取りライブラリ (QuaggaJSを使用) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <!-- バーコード読み取りは共通スキャナー部品で処理 -->
     <script>
       let bookIdScanning = false;
       let userScanning = false;
@@ -1217,7 +1216,12 @@
       
       // キャンセルボタンの処理
       function cancelLending() {
-        // アクティブなスキャナーがあれば閉じる
+        // 共通スキャナーの別ウィンドウが開いていれば閉じる
+        if (window.LiteLibraryBarcodeScanner) {
+          LiteLibraryBarcodeScanner.close();
+        }
+
+        // 旧DOMスキャナーが表示されていれば閉じる
         document.querySelectorAll('.scanner-container').forEach(el => {
           if (el.style.display !== 'none') {
             const vpId = el.querySelector('.scanner-viewport').id;
@@ -1237,6 +1241,47 @@
         }, 500);
       }
 
+    </script>
+    <?!= includeHtml_('barcode_scanner'); ?>
+    <script>
+      LiteLibraryBarcodeScanner.configure({
+        contexts: {
+          'interactive': {
+            inputFieldId: 'book-id',
+            label: '書籍ID',
+            title: '書籍IDをスキャン',
+            readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'code_93_reader']
+          },
+          'interactive-user': {
+            inputFieldId: 'user-id',
+            label: '利用者ID',
+            title: '利用者IDをスキャン',
+            readers: ['code_128_reader', 'code_39_reader', 'code_93_reader', 'codabar_reader']
+          }
+        },
+        onOpen: function(context) {
+          if (context.inputFieldId === 'book-id') {
+            bookIdScanning = true;
+          } else if (context.inputFieldId === 'user-id') {
+            userScanning = true;
+          }
+          setMessage(`${context.label}スキャン用ウィンドウを開いています...`);
+        },
+        onClose: function(context) {
+          if (context.inputFieldId === 'book-id') {
+            bookIdScanning = false;
+          } else if (context.inputFieldId === 'user-id') {
+            userScanning = false;
+          }
+        },
+        onScan: function(result) {
+          if (result.inputFieldId === 'book-id') {
+            addBookToList(result.code);
+          } else if (result.inputFieldId === 'user-id') {
+            fetchUserInfo(result.code);
+          }
+        }
+      });
     </script>
     <div class="menu-button-container">
       <a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a>

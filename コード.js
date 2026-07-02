@@ -72,10 +72,19 @@ function doGet(e) {
     }
   }
 
-  const htmlOutput = HtmlService.createHtmlOutputFromFile(page)
+  const htmlOutput = HtmlService.createTemplateFromFile(page).evaluate()
       .setTitle(title)
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // QuaggaJSなどの外部ライブラリ読み込み許可
   return htmlOutput;
+}
+
+/**
+ * HTMLテンプレートから共通部品を読み込む。
+ * @param {string} filename - 読み込むHTMLファイル名
+ * @return {string} HTML文字列
+ */
+function includeHtml_(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
 /**

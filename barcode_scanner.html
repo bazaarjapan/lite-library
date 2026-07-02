@@ -1,0 +1,429 @@
+<script>
+(function() {
+  'use strict';
+
+  const QUAGGA_URL = 'https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js';
+  const DEFAULT_READERS = [
+    'code_128_reader',
+    'code_39_reader',
+    'code_93_reader',
+    'codabar_reader',
+    'ean_reader',
+    'ean_8_reader',
+    'upc_reader',
+    'upc_e_reader'
+  ];
+
+  let config = {
+    contexts: {},
+    onOpen: null,
+    onClose: null,
+    onScan: null
+  };
+  let activeSession = null;
+
+  function mergeConfig(nextConfig) {
+    config = {
+      contexts: Object.assign({}, config.contexts, nextConfig.contexts || {}),
+      onOpen: nextConfig.onOpen || config.onOpen,
+      onClose: nextConfig.onClose || config.onClose,
+      onScan: nextConfig.onScan || config.onScan
+    };
+  }
+
+  function getContext(viewportId, inputFieldId) {
+    const context = Object.assign({}, config.contexts[viewportId] || {});
+    context.viewportId = viewportId;
+    context.inputFieldId = inputFieldId || context.inputFieldId;
+    context.label = context.label || (context.inputFieldId === 'user-id' ? '利用者ID' : '書籍ID');
+    context.title = context.title || `${context.label}をスキャン`;
+    context.readers = context.readers || DEFAULT_READERS;
+    return context;
+  }
+
+  function setMessageSafe(message) {
+    if (typeof window.setMessage === 'function') {
+      window.setMessage(message);
+    } else {
+      console.log(message);
+    }
+  }
+
+  function playBeepSafe() {
+    if (typeof window.playBeepSound === 'function') {
+      window.playBeepSound();
+    }
+  }
+
+  function closeActiveSession(reason) {
+    if (!activeSession) return;
+    const session = activeSession;
+    activeSession = null;
+
+    if (session.closeTimer) {
+      clearInterval(session.closeTimer);
+    }
+    if (session.popup && !session.popup.closed && reason !== 'popup-closed') {
+      session.popup.close();
+    }
+    if (session.objectUrl) {
+      URL.revokeObjectURL(session.objectUrl);
+    }
+    if (typeof config.onClose === 'function') {
+      config.onClose(session.context, reason || 'closed');
+    }
+  }
+
+  function handleScan(session, code) {
+    const normalizedCode = (code || '').toString().trim();
+    if (!normalizedCode) {
+      return;
+    }
+
+    const input = document.getElementById(session.context.inputFieldId);
+    if (input) {
+      input.value = normalizedCode;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    playBeepSafe();
+    setMessageSafe(`${session.context.label}「${normalizedCode}」を読み取りました。`);
+
+    if (typeof config.onScan === 'function') {
+      config.onScan({
+        code: normalizedCode,
+        inputFieldId: session.context.inputFieldId,
+        viewportId: session.context.viewportId,
+        context: session.context
+      });
+    }
+  }
+
+  window.addEventListener('message', function(event) {
+    const data = event.data || {};
+    if (!activeSession || event.source !== activeSession.popup) return;
+    if (data.source !== 'lite-library-barcode-scanner' || data.token !== activeSession.token) return;
+
+    const session = activeSession;
+    if (data.type === 'detected') {
+      closeActiveSession('detected');
+      handleScan(session, data.code);
+    } else if (data.type === 'error') {
+      closeActiveSession('error');
+      setMessageSafe(data.message || 'カメラを起動できませんでした。手入力してください。');
+    } else if (data.type === 'ready') {
+      setMessageSafe(`${session.context.label}をカメラに向けてください。`);
+    }
+  });
+
+  function openScanner(viewportId, inputFieldId) {
+    const context = getContext(viewportId, inputFieldId);
+    const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    closeActiveSession('replaced');
+
+    const popup = window.open('', 'liteLibraryBarcodeScanner', 'width=520,height=760');
+
+    if (!popup) {
+      setMessageSafe('スキャン用ウィンドウを開けませんでした。ポップアップを許可するか、手入力してください。');
+      return;
+    }
+
+    const popupConfig = {
+      token: token,
+      title: context.title,
+      label: context.label,
+      facingMode: context.facingMode || 'environment',
+      readers: context.readers
+    };
+    const html = buildPopupHtml(popupConfig);
+    const objectUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+
+    activeSession = {
+      popup: popup,
+      objectUrl: objectUrl,
+      token: token,
+      context: context,
+      closeTimer: null
+    };
+
+    if (typeof config.onOpen === 'function') {
+      config.onOpen(context);
+    }
+
+    popup.location.replace(objectUrl);
+    activeSession.closeTimer = setInterval(function() {
+      if (!activeSession || activeSession.popup !== popup) return;
+      if (popup.closed) {
+        closeActiveSession('popup-closed');
+        setMessageSafe('スキャンをキャンセルしました。');
+      }
+    }, 500);
+  }
+
+  function buildPopupHtml(popupConfig) {
+    const serializedConfig = JSON.stringify(popupConfig).replace(/</g, '\\u003c');
+    const scriptClose = '</' + 'script>';
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(popupConfig.title)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      min-height: 100vh;
+      background: #111827;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Noto Sans JP", sans-serif;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      padding: 14px 16px;
+      background: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    h1 { margin: 0; font-size: 18px; }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 16px;
+      font-weight: 700;
+      background: #f8fafc;
+      color: #0f172a;
+      cursor: pointer;
+    }
+    #viewport {
+      position: relative;
+      flex: 1;
+      min-height: 420px;
+      overflow: hidden;
+      background: #020617;
+    }
+    #viewport video,
+    #viewport canvas {
+      position: absolute !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      max-height: none !important;
+      display: block;
+      object-fit: cover;
+      transform: none !important;
+    }
+    #viewport video {
+      z-index: 0;
+    }
+    #viewport canvas {
+      z-index: 1;
+      pointer-events: none;
+    }
+    #message {
+      padding: 12px 16px;
+      background: #1f2937;
+      color: #e5e7eb;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .guide {
+      position: absolute;
+      top: 36%;
+      right: 8%;
+      bottom: 36%;
+      left: 8%;
+      border: 3px solid rgba(250, 204, 21, 0.95);
+      border-radius: 12px;
+      pointer-events: none;
+      box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.22);
+      z-index: 2;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>${escapeHtml(popupConfig.title)}</h1>
+    <div>
+      <button type="button" id="switch-camera">切替</button>
+      <button type="button" id="close-window">閉じる</button>
+    </div>
+  </header>
+  <div id="viewport"><div class="guide"></div></div>
+  <div id="message">カメラを起動しています...</div>
+  <script src="${QUAGGA_URL}">${scriptClose}
+  <script>
+    window.SCANNER_CONFIG = ${serializedConfig};
+    (${popupMain.toString()})();
+  ${scriptClose}
+</body>
+</html>`;
+  }
+
+  function popupMain() {
+    'use strict';
+    var config = window.SCANNER_CONFIG;
+    var facingMode = config.facingMode || 'environment';
+    var running = false;
+    var lastDetectedCode = null;
+    var lastDetectedTime = 0;
+    var cooldownMs = 1600;
+
+    function post(type, payload) {
+      if (!window.opener) return;
+      window.opener.postMessage(Object.assign({
+        source: 'lite-library-barcode-scanner',
+        token: config.token,
+        type: type
+      }, payload || {}), '*');
+    }
+
+    function setMessage(message) {
+      var el = document.getElementById('message');
+      if (el) el.textContent = message;
+    }
+
+    function cleanup() {
+      running = false;
+      if (window.Quagga) {
+        try {
+          Quagga.offDetected();
+          Quagga.offProcessed();
+          Quagga.stop();
+        } catch (e) {
+          console.log(e);
+        }
+      }
+      document.querySelectorAll('video').forEach(function(video) {
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(function(track) { track.stop(); });
+        }
+      });
+    }
+
+    function start() {
+      cleanup();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        post('error', { message: 'このブラウザではカメラを使用できません。手入力してください。' });
+        return;
+      }
+      if (!window.Quagga) {
+        post('error', { message: 'バーコード読み取りライブラリを読み込めませんでした。通信状態を確認してください。' });
+        return;
+      }
+
+      setMessage('カメラを起動しています...');
+      Quagga.init({
+        inputStream: {
+          name: 'Live',
+          type: 'LiveStream',
+          target: document.querySelector('#viewport'),
+          constraints: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: { ideal: facingMode }
+          },
+          area: { top: '36%', right: '8%', left: '8%', bottom: '36%' }
+        },
+        locator: {
+          patchSize: 'medium',
+          halfSample: true
+        },
+        numOfWorkers: navigator.hardwareConcurrency ? Math.min(4, navigator.hardwareConcurrency) : 2,
+        frequency: 10,
+        decoder: {
+          readers: config.readers || []
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          var message = err && (err.message || err.name) ? (err.name || 'Error') + ': ' + (err.message || '') : 'カメラを起動できませんでした。';
+          post('error', { message: 'カメラを起動できませんでした。ブラウザのカメラ許可を確認するか、手入力してください。' });
+          setMessage(message);
+          return;
+        }
+        running = true;
+        Quagga.start();
+        setMessage(config.label + 'のバーコードを枠内に合わせてください。');
+        post('ready');
+      });
+
+      Quagga.onDetected(function(result) {
+        if (!running || !result || !result.codeResult || !result.codeResult.code) return;
+        var confidence = result.codeResult.confidence;
+        if (typeof confidence === 'number' && confidence < 0.45) return;
+
+        var code = String(result.codeResult.code).trim();
+        var now = Date.now();
+        if (!code || (code === lastDetectedCode && now - lastDetectedTime < cooldownMs)) return;
+
+        lastDetectedCode = code;
+        lastDetectedTime = now;
+        running = false;
+        setMessage('読み取りました: ' + code);
+        post('detected', { code: code });
+        setTimeout(function() { window.close(); }, 150);
+      });
+    }
+
+    document.getElementById('switch-camera').addEventListener('click', function() {
+      facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      start();
+    });
+    document.getElementById('close-window').addEventListener('click', function() {
+      cleanup();
+      window.close();
+    });
+    window.addEventListener('beforeunload', cleanup);
+    start();
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function(ch) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[ch];
+    });
+  }
+
+  function switchScannerCamera(viewportId) {
+    const context = getContext(viewportId);
+    context.facingMode = context.facingMode === 'user' ? 'environment' : 'user';
+    config.contexts[viewportId] = context;
+    openScanner(viewportId, context.inputFieldId);
+  }
+
+  function configureScanner(nextConfig) {
+    mergeConfig(nextConfig || {});
+
+    window.toggleScanner = function(viewportId, inputFieldId) {
+      openScanner(viewportId, inputFieldId);
+    };
+    window.closeScanner = function() {
+      closeActiveSession('closed');
+    };
+    window.switchCamera = switchScannerCamera;
+    window.stopScanner = function() {
+      closeActiveSession('stopped');
+    };
+  }
+
+  window.LiteLibraryBarcodeScanner = {
+    configure: configureScanner,
+    open: openScanner,
+    close: function() { closeActiveSession('closed'); },
+    switchCamera: switchScannerCamera
+  };
+})();
+</script>
