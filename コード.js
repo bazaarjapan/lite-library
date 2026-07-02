@@ -144,8 +144,8 @@ const LOCK_BUSY_MESSAGE = "他の貸出・返却処理が実行中です。し�
  * @return {boolean} 妥当なら true
  */
 function isValidIsbn_(isbn) {
-  if (!isbn) return false;
-  const normalized = isbn.toString().replace(/[-\s]/g, "");
+  const normalized = normalizeIsbn_(isbn);
+  if (!normalized) return false;
   if (/^\d{9}[\dXx]$/.test(normalized)) {
     return true; // ISBN-10 (チェックディジットは形式のみ確認)
   }
@@ -159,6 +159,21 @@ function isValidIsbn_(isbn) {
     return checkDigit === parseInt(normalized[12], 10);
   }
   return false;
+}
+
+/**
+ * ISBNをAPI検索・保存に使いやすい形へ正規化する。
+ * 全角数字・全角Xを半角にし、ハイフン・空白を除去する。
+ * @param {string} isbn - ISBN
+ * @return {string} 正規化したISBN
+ */
+function normalizeIsbn_(isbn) {
+  if (!isbn) return "";
+  return isbn.toString()
+    .trim()
+    .replace(/[０-９Ｘｘ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/[-‐‑‒–—―ー－\s]/g, "")
+    .toUpperCase();
 }
 
 /**
@@ -234,6 +249,31 @@ function findRowsByTrimmedScan_(range, searchValue, matchCase) {
 }
 
 /**
+ * ISBN列を正規化して検索し、ハイフン・空白・全角数字が混在する旧データにも一致させる。
+ * @param {Sheet} sheet - 検索対象シート
+ * @param {number} column - ISBNが入っている列(1始まり)
+ * @param {string} isbn - 検索するISBN
+ * @return {number[]} 一致した行番号(1始まり)の配列
+ */
+function findRowsByNormalizedIsbn_(sheet, column, isbn) {
+  const normalized = normalizeIsbn_(isbn);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2 || !normalized) {
+    return [];
+  }
+
+  const values = sheet.getRange(2, column, lastRow - 1, 1).getValues();
+  const rows = [];
+  for (let i = 0; i < values.length; i++) {
+    const cellIsbn = normalizeIsbn_(values[i][0]);
+    if (cellIsbn && cellIsbn === normalized) {
+      rows.push(i + 2);
+    }
+  }
+  return rows;
+}
+
+/**
  * 指定シートの1列を完全一致で検索し、最初に一致した行番号を返す共通ヘルパー
  * @param {Sheet} sheet - 検索対象シート
  * @param {number} column - 検索する列(1始まり)
@@ -280,6 +320,7 @@ function getAvailableBook(isbn) {
     console.error("ISBNが指定されていません。");
     return null;
   }
+  const normalizedIsbn = normalizeIsbn_(isbn);
   
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -290,19 +331,20 @@ function getAvailableBook(isbn) {
     
     // 新しいデータ構造のチェック
     if (isNewBookLayout_(bookSheet)) {
-      // TextFinderでISBN(B列)が一致する行だけを取得し、その中から在庫のある本を探す
-      const rowNumbers = findRowsByValue_(bookSheet, 2, isbn);
+      // ISBN(B列)を正規化して一致する行だけを取得し、その中から在庫のある本を探す
+      const rowNumbers = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedIsbn);
       for (const rowNumber of rowNumbers) {
         const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
         const status = row[6] || "在庫";
         if (status === "在庫") {
           const managementNum = row[0] || "";
+          const storedIsbn = row[1] ? row[1].toString().trim() : normalizedIsbn;
           const bookTitle = row[2] || "タイトル不明";
           console.log(`利用可能な書籍発見: ${bookTitle} (管理番号: ${managementNum})`);
           return {
             title: bookTitle,
             managementNumber: managementNum,
-            isbn: isbn,
+            isbn: normalizeIsbn_(storedIsbn) || storedIsbn,
             status: status
           };
         }
@@ -327,6 +369,7 @@ function getBookDetails(bookId) {
     console.error("書籍IDが指定されていません。");
     return null;
   }
+  const normalizedInputIsbn = isValidIsbn_(bookId) ? normalizeIsbn_(bookId) : "";
   console.log(`書籍情報検索開始: 書籍ID=${bookId}`);
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -341,8 +384,9 @@ function getBookDetails(bookId) {
       // 新構造: A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
       // TextFinderで管理番号(A列)→ISBN(B列)の順に検索し、全行読み込みを避ける
       let rowNumber = findRowByValue_(bookSheet, 1, bookId);
-      if (rowNumber === -1) {
-        rowNumber = findRowByValue_(bookSheet, 2, bookId);
+      if (rowNumber === -1 && normalizedInputIsbn) {
+        const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedInputIsbn);
+        rowNumber = isbnRows.length > 0 ? isbnRows[0] : -1;
       }
       if (rowNumber !== -1) {
         const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
@@ -360,15 +404,20 @@ function getBookDetails(bookId) {
       }
     } else {
       // 旧構造: A:書籍ID(ISBN), B:書籍名
-      const rowNumber = findRowByValue_(bookSheet, 1, bookId);
+      let rowNumber = findRowByValue_(bookSheet, 1, bookId);
+      if (rowNumber === -1 && normalizedInputIsbn) {
+        const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 1, normalizedInputIsbn);
+        rowNumber = isbnRows.length > 0 ? isbnRows[0] : -1;
+      }
       if (rowNumber !== -1) {
         const row = bookSheet.getRange(rowNumber, 1, 1, 2).getValues()[0];
+        const storedBookId = row[0] ? row[0].toString().trim() : bookId;
         const bookTitle = row[1] || "タイトル不明";
         console.log(`書籍情報取得成功: ${bookTitle}`);
         return {
           title: bookTitle,
-          managementNumber: bookId,
-          isbn: bookId,
+          managementNumber: storedBookId,
+          isbn: storedBookId,
           status: "在庫"
         };
       }
@@ -1379,12 +1428,19 @@ function processBulkLending_(bulkData) {
         const entry = {
           title: bookData[i][titleColIndex] || "タイトル不明",
           status: isNewLayout ? (bookData[i][6] || "在庫") : "在庫",
-          rowNumber: i + 1
+          rowNumber: i + 1,
+          bookId: bookId
         };
         bookMap.set(bookId, entry);
+        if (!isNewLayout) {
+          const normalizedBookId = isValidIsbn_(bookId) ? normalizeIsbn_(bookId) : "";
+          if (normalizedBookId && normalizedBookId !== bookId) {
+            bookMap.set(normalizedBookId, entry);
+          }
+        }
         // 新レイアウトではISBN(B列)でも検索できるようにする(getBookDetails と同じ挙動)
         if (isNewLayout && bookData[i][1]) {
-          const isbn = bookData[i][1].toString().trim();
+          const isbn = normalizeIsbn_(bookData[i][1]);
           if (isbn) {
             if (!copiesByIsbn.has(isbn)) {
               copiesByIsbn.set(isbn, []);
@@ -1426,13 +1482,17 @@ function processBulkLending_(bulkData) {
     bulkData.bookIds.forEach(bookId => {
       const trimmedBookId = bookId.trim();
       if (!trimmedBookId) return; // 空のIDはスキップ
+      const normalizedInputIsbn = isValidIsbn_(trimmedBookId) ? normalizeIsbn_(trimmedBookId) : "";
 
       let book = bookMap.get(trimmedBookId);
-      let lendId = trimmedBookId; // 実際に貸出記録へ書き込むID(管理番号)
+      if (!book && normalizedInputIsbn) {
+        book = bookMap.get(normalizedInputIsbn);
+      }
+      let lendId = book && book.bookId ? book.bookId : trimmedBookId; // 実際に貸出記録へ書き込むID(管理番号)
 
       // 管理番号で見つからない場合はISBNとして解釈し、貸出可能なコピーを探す
-      if (!book && copiesByIsbn.has(trimmedBookId)) {
-        const availableCopy = copiesByIsbn.get(trimmedBookId).find(copy =>
+      if (!book && normalizedInputIsbn && copiesByIsbn.has(normalizedInputIsbn)) {
+        const availableCopy = copiesByIsbn.get(normalizedInputIsbn).find(copy =>
           copy.entry.status === "在庫" && !activeLoanIds.has(copy.managementNumber)
         );
         if (!availableCopy) {
@@ -1641,44 +1701,131 @@ function getUserRentals(userId) {
 
 
 /**
- * Google Books APIを使用して書籍情報を取得する関数
+ * ISBNから書籍情報を取得する関数。
+ * openBDを優先し、見つからない場合のみGoogle Books APIを予備として使う。
  * @param {string} isbn - 書籍のISBNコード
  * @return {object} 書籍情報オブジェクト
  */
 function fetchBookInfo(isbn) {
-  if (!isbn) {
+  const normalizedIsbn = normalizeIsbn_(isbn);
+  if (!normalizedIsbn) {
     return { error: "ISBNが指定されていません。" };
   }
-  
+  if (!isValidIsbn_(normalizedIsbn)) {
+    return { error: `ISBNの形式が正しくありません: ${isbn}` };
+  }
+
   try {
-    // Google Books APIのURLを構築
-    const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&country=JP`;
-    
-    // APIリクエストを送信
-    const response = UrlFetchApp.fetch(url);
-    const data = JSON.parse(response.getContentText());
-    
-    // 検索結果がない場合
-    if (!data.items || data.items.length === 0) {
-      return { error: "書籍情報が見つかりませんでした。" };
+    const openBdResult = fetchBookInfoFromOpenBd_(normalizedIsbn);
+    if (openBdResult && !openBdResult.error) {
+      return openBdResult;
     }
-    
-    // 最初の検索結果から書籍情報を抽出
-    const volumeInfo = data.items[0].volumeInfo;
-    
-    // 書籍情報オブジェクトを作成
-    const bookInfo = {
+
+    const googleResult = fetchBookInfoFromGoogleBooks_(normalizedIsbn);
+    if (googleResult && !googleResult.error) {
+      return googleResult;
+    }
+
+    const errors = [];
+    if (openBdResult && openBdResult.error) errors.push(`openBD: ${openBdResult.error}`);
+    if (googleResult && googleResult.error) errors.push(`Google Books: ${googleResult.error}`);
+    if (errors.length > 0) {
+      return { error: `書籍情報を取得できませんでした。${errors.join(" / ")}` };
+    }
+    return { error: "書籍情報が見つかりませんでした。" };
+  } catch (error) {
+    console.error(`書籍情報の取得中にエラーが発生しました: ${error}`);
+    return { error: `APIリクエスト中にエラーが発生しました: ${error.message}` };
+  }
+}
+
+/**
+ * openBDからISBN書籍情報を取得する。
+ * @param {string} isbn - 正規化済みISBN
+ * @return {object|null} 書籍情報、未検出ならnull、APIエラーなら{error}
+ */
+function fetchBookInfoFromOpenBd_(isbn) {
+  try {
+    const url = `https://api.openbd.jp/v1/get?isbn=${encodeURIComponent(isbn)}`;
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const statusCode = response.getResponseCode();
+    const body = response.getContentText();
+
+    if (statusCode < 200 || statusCode >= 300) {
+      return { error: `HTTP ${statusCode}` };
+    }
+
+    let data;
+    try {
+      data = JSON.parse(body);
+    } catch (error) {
+      return { error: `レスポンスJSONの解析に失敗しました: ${error.message}` };
+    }
+
+    const item = Array.isArray(data) ? data[0] : null;
+    if (!item || !item.summary) {
+      return null;
+    }
+
+    const summary = item.summary;
+    if (!summary.title) {
+      return null;
+    }
+
+    return {
+      isbn: summary.isbn || isbn,
+      title: summary.title || "",
+      authors: summary.author || "",
+      publisher: summary.publisher || "",
+      thumbnail: summary.cover || null
+    };
+  } catch (error) {
+    console.error(`openBDからの書籍情報取得に失敗しました: ${error}`);
+    return { error: error.message };
+  }
+}
+
+/**
+ * Google Books APIからISBN書籍情報を取得する。
+ * @param {string} isbn - 正規化済みISBN
+ * @return {object|null} 書籍情報、未検出ならnull、APIエラーなら{error}
+ */
+function fetchBookInfoFromGoogleBooks_(isbn) {
+  try {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}&country=JP`;
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const statusCode = response.getResponseCode();
+    const body = response.getContentText();
+
+    let data = null;
+    try {
+      data = JSON.parse(body);
+    } catch (error) {
+      if (statusCode >= 200 && statusCode < 300) {
+        return { error: `レスポンスJSONの解析に失敗しました: ${error.message}` };
+      }
+    }
+
+    if (statusCode < 200 || statusCode >= 300) {
+      const apiMessage = data && data.error && data.error.message ? data.error.message : body.slice(0, 200);
+      return { error: `HTTP ${statusCode}: ${apiMessage}` };
+    }
+
+    if (!data.items || data.items.length === 0) {
+      return null;
+    }
+
+    const volumeInfo = data.items[0].volumeInfo || {};
+    return {
       isbn: isbn,
       title: volumeInfo.title || "",
       authors: volumeInfo.authors ? volumeInfo.authors.join(", ") : "",
       publisher: volumeInfo.publisher || "",
       thumbnail: volumeInfo.imageLinks ? volumeInfo.imageLinks.smallThumbnail : null
     };
-    
-    return bookInfo;
   } catch (error) {
-    console.error(`書籍情報の取得中にエラーが発生しました: ${error}`);
-    return { error: `APIリクエスト中にエラーが発生しました: ${error.message}` };
+    console.error(`Google Booksからの書籍情報取得に失敗しました: ${error}`);
+    return { error: error.message };
   }
 }
 
@@ -1695,6 +1842,8 @@ function registerBook(bookData) {
 }
 
 function registerBook_(bookData) {
+  bookData = bookData || {};
+  bookData.isbn = normalizeIsbn_(bookData.isbn);
   console.log("registerBook関数が呼び出されました:", JSON.stringify(bookData));
   
   const missing = validateRequired_(bookData, { isbn: "書籍ID(ISBN)", title: "書籍名" });
@@ -1737,7 +1886,8 @@ function registerBook_(bookData) {
     if (data.length > 1) {
       for (let i = 1; i < data.length; i++) {
         const existingIsbn = data[i][isbnColIndex];
-        if (existingIsbn && existingIsbn.toString().trim() === bookData.isbn.trim()) {
+        const normalizedExistingIsbn = normalizeIsbn_(existingIsbn);
+        if (normalizedExistingIsbn && normalizedExistingIsbn === bookData.isbn) {
           // 管理番号から番号部分を抽出（例: "9784123456789-003" → 3）
           const managementNumber = data[i][0];
           if (managementNumber) {

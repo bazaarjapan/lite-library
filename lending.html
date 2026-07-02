@@ -1043,9 +1043,19 @@
           google.script.run
               .withSuccessHandler(bookDetails => {
                   if (bookDetails && bookDetails.title) {
+                      const resolvedBookId = bookDetails.managementNumber && bookDetails.managementNumber === bookDetails.isbn
+                          ? bookDetails.managementNumber
+                          : trimmedBookId;
+                      const existingResolvedBook = scannedBooks.find(book => book.id === resolvedBookId);
+                      if (existingResolvedBook) {
+                          setMessage(`書籍ID [${resolvedBookId}] は既に追加されています。`);
+                          clearBookIdInput();
+                          updateLendingButtonState();
+                          return;
+                      }
                       // 新しい書籍情報をオブジェクトとして追加
                       scannedBooks.push({
-                          id: trimmedBookId,
+                          id: resolvedBookId,
                           title: bookDetails.title,
                           checked: true // デフォルトでチェック済み
                       });
