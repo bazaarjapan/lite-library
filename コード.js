@@ -3899,9 +3899,9 @@ function createHistoryReport(historyData) {
           record.bookTitle,
           record.userId,
           record.userName,
-          record.lendingDate ? Utilities.formatDate(record.lendingDate, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm") : "",
-          record.dueDate ? Utilities.formatDate(record.dueDate, Session.getScriptTimeZone(), "yyyy/MM/dd") : "",
-          record.returnDate ? Utilities.formatDate(record.returnDate, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm") : "",
+          record.lendingDate ? Utilities.formatDate(new Date(record.lendingDate), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm") : "",
+          record.dueDate ? Utilities.formatDate(new Date(record.dueDate), Session.getScriptTimeZone(), "yyyy/MM/dd") : "",
+          record.returnDate ? Utilities.formatDate(new Date(record.returnDate), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm") : "",
           statusText
         ];
       });
