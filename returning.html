@@ -569,21 +569,19 @@
         document.getElementById('scan-book-id-button').addEventListener('click', () => {
           toggleScanner('interactive', 'book-id');
         });
-        // 書籍ID手入力時のEnterキー処理
+        // 書籍ID手入力時のEnterキー処理(スキャンウィンドウが開いていても手入力は受け付ける)
         document.getElementById('book-id').addEventListener('keypress', (event) => {
-          if (event.key === 'Enter' && !isScanning) {
+          if (event.key === 'Enter') {
             searchUnreturnedBooks();
           }
         });
         // 検索ボタンのイベントリスナー
         document.getElementById('search-book-button').addEventListener('click', () => {
-          if (!isScanning) {
-            const bookId = document.getElementById('book-id').value.trim();
-            if (bookId) {
-              searchUnreturnedBooks();
-            } else {
-              setMessage("書籍IDを入力してください。");
-            }
+          const bookId = document.getElementById('book-id').value.trim();
+          if (bookId) {
+            searchUnreturnedBooks();
+          } else {
+            setMessage("書籍IDを入力してください。");
           }
         });
       }

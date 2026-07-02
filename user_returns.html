@@ -1058,22 +1058,20 @@
         document.getElementById('message').innerText = msg;
       }
       
-      // 利用者IDが手入力された場合にEnterキーで検索を実行
+      // 利用者IDが手入力された場合にEnterキーで検索を実行(スキャンウィンドウが開いていても受け付ける)
       document.getElementById('user-id').addEventListener('keypress', (event) => {
-        if (event.key === 'Enter' && !isScanning) {
+        if (event.key === 'Enter') {
           searchUserRentals();
         }
       });
-      
+
       // 検索ボタンのイベントリスナー
       document.getElementById('search-user-button').addEventListener('click', () => {
-        if (!isScanning) {
-          const userId = document.getElementById('user-id').value.trim();
-          if (userId) {
-            searchUserRentals();
-          } else {
-            setMessage("利用者IDを入力してください。");
-          }
+        const userId = document.getElementById('user-id').value.trim();
+        if (userId) {
+          searchUserRentals();
+        } else {
+          setMessage("利用者IDを入力してください。");
         }
       });
 
