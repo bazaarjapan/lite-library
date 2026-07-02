@@ -484,7 +484,11 @@
       
       google.script.run
         .withSuccessHandler(function(result) {
-          showMessage('設定を保存しました', 'success');
+          if (result && result.success) {
+            showMessage('設定を保存しました', 'success');
+          } else {
+            showMessage('設定の保存に失敗しました: ' + (result && result.message ? result.message : '不明なエラー'), 'error');
+          }
         })
         .withFailureHandler(function(error) {
           showMessage('設定の保存に失敗しました: ' + error.message, 'error');

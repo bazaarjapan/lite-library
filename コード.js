@@ -1305,13 +1305,19 @@ function processBulkLending_(bulkData) {
     }
 
     // 書籍DBの情報を先に読み込んでおく（効率化のため）
+    // 新レイアウト: A=管理番号, B=ISBN, C=書籍名, G=状態 / 旧レイアウト: A=書籍ID, B=書籍名
     const bookData = bookSheet.getDataRange().getValues();
-    const bookMap = new Map(); // 書籍IDをキー、書籍名を値とするMap
+    const isNewLayout = bookData.length > 0 && bookData[0][0] === "管理番号";
+    const titleColIndex = isNewLayout ? 2 : 1;
+    const bookMap = new Map(); // 書籍IDをキー、{title, status, rowNumber} を値とするMap
     for (let i = 1; i < bookData.length; i++) {
       const bookId = bookData[i][0] ? bookData[i][0].toString().trim() : null;
-      const bookTitle = bookData[i][1] || "タイトル不明";
       if (bookId) {
-        bookMap.set(bookId, bookTitle);
+        bookMap.set(bookId, {
+          title: bookData[i][titleColIndex] || "タイトル不明",
+          status: isNewLayout ? (bookData[i][6] || "在庫") : "在庫",
+          rowNumber: i + 1
+        });
       }
     }
 
@@ -1331,31 +1337,57 @@ function processBulkLending_(bulkData) {
     const returnStatus = "未返却"; // 初期状態
 
     const rowsToAdd = [];
+    const rowsToMarkLent = []; // 貸出中に更新する書籍DBの行番号
 
     bulkData.bookIds.forEach(bookId => {
       const trimmedBookId = bookId.trim();
       if (!trimmedBookId) return; // 空のIDはスキップ
 
-      const bookTitle = bookMap.get(trimmedBookId) || "タイトル不明（DB未登録）";
+      const book = bookMap.get(trimmedBookId);
+
+      // 在庫チェック: DB未登録・貸出中の本は貸し出さない（二重貸出防止）
+      if (!book) {
+        errorCount++;
+        errorMessages.push(`${trimmedBookId}（DB未登録）`);
+        console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} はDBに登録されていません。`);
+        return;
+      }
+      if (book.status !== "在庫") {
+        errorCount++;
+        errorMessages.push(`${trimmedBookId}（${book.status}）`);
+        console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} は「${book.status}」のため貸出できません。`);
+        return;
+      }
+
+      // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
+      book.status = "貸出中";
 
       // スプレッドシートに追加するデータ配列
       rowsToAdd.push([
         trimmedBookId,
-        bookTitle,
+        book.title,
         bulkData.userId,
         bulkData.userName,
         lendingDate,
         dueDate,
         returnStatus
       ]);
+      if (isNewLayout) {
+        rowsToMarkLent.push(book.rowNumber);
+      }
       successCount++;
-      console.log(`貸出準備完了: ${bookTitle} (ID: ${trimmedBookId})`);
+      console.log(`貸出準備完了: ${book.title} (ID: ${trimmedBookId})`);
     });
 
     // まとめて追記
     if (rowsToAdd.length > 0) {
       lendingSheet.getRange(lendingSheet.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
       console.log(`${successCount}件の貸出記録を追加しました。`);
+
+      // 書籍DBの状態を「貸出中」に更新（G列）
+      rowsToMarkLent.forEach(rowNumber => {
+        bookSheet.getRange(rowNumber, 7).setValue("貸出中");
+      });
     }
 
     if (errorCount > 0) {
