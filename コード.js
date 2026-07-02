@@ -194,6 +194,21 @@ function validateRequired_(obj, fields) {
 }
 
 /**
+ * google.script.run の返却値に含める日付をISO文字列へ変換する共通ヘルパー
+ * 返却値に生のDateオブジェクトが含まれるとシリアライズに失敗し、
+ * クライアント側で成功・失敗どちらのハンドラも呼ばれず黙って失敗するため、
+ * シートから getValues() で読んだ日付セルは必ずこの関数を通して返すこと。
+ * @param {*} value - シートから読み込んだセル値
+ * @return {string} Date なら ISO 8601 文字列、それ以外は文字列化した値(空値は "")
+ */
+function toIsoString_(value) {
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? "" : value.toISOString();
+  }
+  return value === undefined || value === null ? "" : value.toString();
+}
+
+/**
  * メールアドレスの形式を簡易検証する共通関数
  * @param {string} email - 検証するメールアドレス
  * @return {boolean} 妥当なら true
@@ -2080,10 +2095,10 @@ function getUserLendingHistory(userId) {
         history.push({
           bookId: data[i][0] || "",
           bookTitle: data[i][1] || "",
-          lendingDate: data[i][4] || "",
-          dueDate: data[i][5] || "",
+          lendingDate: toIsoString_(data[i][4]),
+          dueDate: toIsoString_(data[i][5]),
           status: data[i][6] || "",
-          returnDate: data[i][7] || ""
+          returnDate: toIsoString_(data[i][7])
         });
       }
     }
@@ -3108,8 +3123,8 @@ function getOverdueList() {
               userName: row[userNameColIndex] || "",
               bookId: row[bookIdColIndex] || "",
               bookTitle: row[titleColIndex] || "",
-              lendingDate: row[lendingDateColIndex],
-              dueDate: dueDateValue,
+              lendingDate: toIsoString_(row[lendingDateColIndex]),
+              dueDate: toIsoString_(dueDateValue),
               overdueDays: overdueDays
             });
           }
@@ -3182,8 +3197,8 @@ function createOverdueReport() {
           item.userName,
           item.bookId,
           item.bookTitle,
-          Utilities.formatDate(item.lendingDate, Session.getScriptTimeZone(), "yyyy/MM/dd"),
-          Utilities.formatDate(item.dueDate, Session.getScriptTimeZone(), "yyyy/MM/dd"),
+          item.lendingDate ? Utilities.formatDate(new Date(item.lendingDate), Session.getScriptTimeZone(), "yyyy/MM/dd") : "",
+          item.dueDate ? Utilities.formatDate(new Date(item.dueDate), Session.getScriptTimeZone(), "yyyy/MM/dd") : "",
           item.overdueDays + "日",
           contact
         ];
@@ -3539,8 +3554,8 @@ function getLibraryStatistics() {
         bookTitle: row[titleColIndex] || "",
         userId: row[userIdColIndex] || "",
         userName: row[userNameColIndex] || "",
-        lendingDate: lendingDate,
-        dueDate: dueDate,
+        lendingDate: toIsoString_(lendingDate),
+        dueDate: toIsoString_(dueDate),
         status: status,
         isOverdue: isOverdue
       });
@@ -3821,9 +3836,9 @@ function searchLendingHistory(criteria) {
           bookTitle: row[titleColIndex] || "",
           userId: row[userIdColIndex] || "",
           userName: row[userNameColIndex] || "",
-          lendingDate: row[lendingDateColIndex],
-          dueDate: row[dueDateColIndex],
-          returnDate: row[returnDateColIndex] || null,
+          lendingDate: toIsoString_(row[lendingDateColIndex]),
+          dueDate: toIsoString_(row[dueDateColIndex]),
+          returnDate: row[returnDateColIndex] ? toIsoString_(row[returnDateColIndex]) : null,
           status: status,
           isOverdue: isOverdue
         });
@@ -3957,10 +3972,10 @@ function getBookInventory() {
       
       if (status === "未返却") {
         lendingMap.set(bookId, {
-          borrowerName: lendingData[i][3],  // D列: 利用者名
-          borrowerId: lendingData[i][2],    // C列: 利用者ID
-          lendingDate: lendingData[i][4],   // E列: 貸出日時
-          dueDate: lendingData[i][5]        // F列: 返却予定日
+          borrowerName: lendingData[i][3],              // D列: 利用者名
+          borrowerId: lendingData[i][2],                // C列: 利用者ID
+          lendingDate: toIsoString_(lendingData[i][4]), // E列: 貸出日時
+          dueDate: toIsoString_(lendingData[i][5])      // F列: 返却予定日
         });
       }
     }
@@ -4077,7 +4092,7 @@ function getBookFullDetails(bookId) {
           note: bookData[i][4] || "",
           category: bookData[i][5] || "",
           location: bookData[i][6] || "",
-          registrationDate: bookData[i][7] || new Date(),
+          registrationDate: toIsoString_(bookData[i][7] || new Date()),
           isAvailable: true,
           lastLendingDate: null
         };
@@ -4100,7 +4115,10 @@ function getBookFullDetails(bookId) {
             }
           }
         }
-        
+
+        // Dateのままだと google.script.run が黙って失敗するためISO文字列へ変換
+        bookInfo.lastLendingDate = bookInfo.lastLendingDate ? toIsoString_(bookInfo.lastLendingDate) : null;
+
         return bookInfo;
       }
     }
@@ -4136,10 +4154,10 @@ function getBookLendingHistory(bookId) {
         history.push({
           userId: data[i][2] || "",
           userName: data[i][3] || "",
-          lendingDate: data[i][4] || "",
-          dueDate: data[i][5] || "",
+          lendingDate: toIsoString_(data[i][4]),
+          dueDate: toIsoString_(data[i][5]),
           status: data[i][6] || "",
-          returnDate: data[i][7] || ""
+          returnDate: toIsoString_(data[i][7])
         });
       }
     }
@@ -4335,8 +4353,8 @@ function createInventoryReport() {
           book.publisher,
           statusText,
           book.borrowerName || "",
-          book.lendingDate ? Utilities.formatDate(book.lendingDate, Session.getScriptTimeZone(), "yyyy/MM/dd") : "",
-          book.dueDate ? Utilities.formatDate(book.dueDate, Session.getScriptTimeZone(), "yyyy/MM/dd") : ""
+          book.lendingDate ? Utilities.formatDate(new Date(book.lendingDate), Session.getScriptTimeZone(), "yyyy/MM/dd") : "",
+          book.dueDate ? Utilities.formatDate(new Date(book.dueDate), Session.getScriptTimeZone(), "yyyy/MM/dd") : ""
         ];
       });
       
