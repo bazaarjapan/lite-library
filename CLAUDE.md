@@ -33,8 +33,20 @@ The script ID is in `.clasp.json`. Manual test helpers exist in コード.js (`t
 Column positions and header names are hard-coded as array indices throughout コード.js; several functions detect old vs. new data layouts by checking whether `data[0][0] === "管理番号"`. Changing a sheet's column order breaks many functions.
 
 **Conventions in コード.js:**
-- "書籍ID" (bookId) may be either a 管理番号 or an ISBN; `getBookDetails` resolves both.
-- Mutating functions return either a result object `{success, message}` or a plain string message (`貸出登録成功: ...` / `登録失敗: ...`) — match the pattern of the specific function you're extending, since the HTML page's success handler parses that shape.
+- "書籍ID" (bookId) may be either a 管理番号 or an ISBN; `getBookDetails` (and bulk lending) resolve both.
+- **Locking:** every public mutating function is a thin wrapper that calls a private `xxx_()` implementation through `runWithScriptLock_(operation, busyResult)`. New mutating functions must follow this pattern (the trailing-underscore name also hides the implementation from `google.script.run`). Pass an `Error` as `busyResult` for functions whose failure contract is throwing.
+- **Return shape:** mutating functions return `{success: boolean, message: string, ...}`; clients branch on `response.success` (never on message text). Return-heavy functions also include `logs`, `successCount`, etc.
+- **Sheet lookups:** use the TextFinder helpers — `findRowByValue_(sheet, col, value, {matchCase})` for unique IDs (fast path + trimmed-scan fallback) and `findRowsByValue_` for all matches (always a single-column trimmed scan). Avoid `getDataRange().getValues()` full scans in per-transaction paths; bulk operations read the sheet once up front.
+- **Validation:** shared helpers `isValidIsbn_` (ISBN-10 format / ISBN-13 checksum), `validateRequired_`, `isValidEmail_` are applied server-side in registration paths.
 - Book metadata for registration is fetched from the Google Books API (`fetchBookInfo`) via `UrlFetchApp`.
 
+**Operational features (run from the spreadsheet's 管理メニュー, defined in `onOpen`):**
+- `setupLibrarySystem` — idempotent initial setup: creates the 4 sheets with correct headers on a blank spreadsheet; never overwrites existing data.
+- `sendOverdueNotifications` — overdue email notifications; dedupes via a `最終通知日` column (located by header name, col ≥ I) and respects the daily MailApp quota. `installOverdueTrigger`/`removeOverdueTrigger` manage a daily 9:00 time-driven trigger (needs the `script.scriptapp` OAuth scope in appsscript.json).
+- `backupReturnedData` — archives returned rows to another spreadsheet; header-compatibility checks protect against appending to mismatched sheets and never clear existing backups.
+
 **Deployment config (`appsscript.json`):** web app runs as the deploying user with `ANYONE_ANONYMOUS` access; timezone is Asia/Tokyo; V8 runtime.
+
+## Development workflow
+
+Loop engineering against GitHub (`bazaarjapan/lite-library`): file an issue with goals and labels → branch `issue-N-<topic>` → implement → PR → request review by commenting `@codex review` → address findings and re-request until Codex replies "Didn't find any major issues" (posted as an issue comment) → squash-merge. Verify syntax locally with `node --check コード.js` before pushing.
