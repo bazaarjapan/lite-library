@@ -1183,21 +1183,21 @@
 
           google.script.run
               .withSuccessHandler(response => {
-                  // 成功したら状態をリセットして次の入力に備える
-                  if (response && typeof response === 'string' && response.includes("成功")) {
+                  // サーバーは {success, message, successCount, errorCount} を返す
+                  if (response && response.success) {
                      // 成功メッセージを表示
-                     setMessage(response); // サーバーからのメッセージを表示
-                     
+                     setMessage(response.message); // サーバーからのメッセージを表示
+
                      // 完全に初期化して次の入力に備える
                      resetLendingState(true); // 利用者情報も含めてリセット
-                     
+
                      // フォーカスを利用者ID入力欄に移動
                      setTimeout(() => {
                          document.getElementById('user-id').focus();
                      }, 500);
                   } else {
                       // 失敗した場合はメッセージを表示してボタンを有効に戻す
-                      setMessage(response || "貸出処理に失敗しました。");
+                      setMessage((response && response.message) || "貸出処理に失敗しました。");
                       document.getElementById('lending-button').disabled = false;
                   }
               })
