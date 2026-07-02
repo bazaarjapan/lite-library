@@ -182,18 +182,11 @@ function findRowsByValue_(sheet, column, value, options) {
   if (lastRow < 2 || value === undefined || value === null || value.toString().trim() === "") {
     return [];
   }
-  const searchValue = value.toString().trim();
+  // 全行が必要な検索では、前後空白付きのセルと正常なセルが混在していても漏れなく拾えるよう、
+  // 常に対象1列を読み込んでトリム比較する(TextFinder の完全一致では空白付きの重複行を
+  // 見逃すため。1列のみの読み込みなので getDataRange 全走査よりは十分軽い)
   const range = sheet.getRange(2, column, lastRow - 1, 1);
-  const finder = range.createTextFinder(searchValue)
-    .matchEntireCell(true)
-    .matchCase(opts.matchCase !== false);
-  const rows = finder.findAll().map(cell => cell.getRow());
-  if (rows.length > 0) {
-    return rows;
-  }
-  // フォールバック: セル値に前後空白が残っている旧データは matchEntireCell で一致しないため、
-  // 対象1列だけを読み込みトリム比較する(全列読み込みよりは十分軽い)
-  return findRowsByTrimmedScan_(range, searchValue, opts.matchCase !== false);
+  return findRowsByTrimmedScan_(range, value.toString().trim(), opts.matchCase !== false);
 }
 
 /**
