@@ -573,6 +573,39 @@
           height: 90px; /* 3倍に拡大 */
         }
       }
+
+      /* PC・iPad(1024px以上): 2カラムレイアウト(左=入力、右=貸出リスト+実行ボタン)。
+         スクロールなしで貸出フロー全体を1画面に収める。スマホは縦積みのまま */
+      @media (min-width: 1024px) {
+        .container {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          column-gap: 60px;
+          align-items: start;
+        }
+        .container > h1 {
+          grid-column: 1 / -1;
+        }
+        .container > hr {
+          display: none;
+        }
+        /* fieldsetの子要素(書籍ID入力・貸出リスト)をグリッドに直接参加させる。
+           display: contents でも disabled 属性による無効化は機能する */
+        #book-section {
+          display: contents;
+        }
+        .container > .form-group,
+        #book-section > .form-group:first-of-type {
+          grid-column: 1;
+        }
+        #book-section > .form-group:last-of-type {
+          grid-column: 2;
+          grid-row: 2 / span 3;
+        }
+        .container > .button-group {
+          grid-column: 2;
+        }
+      }
     </style>
   </head>
   <body>
