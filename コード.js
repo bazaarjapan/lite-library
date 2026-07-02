@@ -87,6 +87,31 @@ function getWebAppUrl() {
 }
 
 /**
+ * スクリプトロックを取得して処理を実行する共通ヘルパー
+ * 貸出・返却・登録などスプレッドシートを更新する処理は、複数端末からの
+ * 同時実行で二重貸出やデータ不整合が起きないよう、必ずこのヘルパー経由で実行する。
+ * @param {Function} operation - ロック取得後に実行する処理
+ * @param {*} busyResult - ロックを取得できなかった場合に呼び出し元へ返す値
+ * @return {*} operation の戻り値、またはロック取得失敗時は busyResult
+ */
+function runWithScriptLock_(operation, busyResult) {
+  const lock = LockService.getScriptLock();
+  // 最大10秒待ってもロックが取れない場合は、他の処理が長時間実行中とみなして中断する
+  if (!lock.tryLock(10000)) {
+    console.warn("スクリプトロックを取得できませんでした。他の処理が実行中です。");
+    return busyResult;
+  }
+  try {
+    return operation();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ロック取得失敗時にユーザーへ返す共通メッセージ */
+const LOCK_BUSY_MESSAGE = "他の貸出・返却処理が実行中です。しばらく待ってから再度お試しください。";
+
+/**
  * 利用可能な書籍を取得する関数（複数冊管理対応）
  * @param {string} isbn - ISBN
  * @return {object|null} 利用可能な書籍情報（在庫がある最初の本）
@@ -272,6 +297,13 @@ function getUserInfo(userId) {
  * @return {string} 処理結果メッセージ
  */
 function processLendingForm(formData) {
+  return runWithScriptLock_(
+    () => processLendingForm_(formData),
+    `登録失敗: ${LOCK_BUSY_MESSAGE}`
+  );
+}
+
+function processLendingForm_(formData) {
   console.log("貸出フォームデータ受信:", formData);
   try {
     // 入力チェック
@@ -443,6 +475,13 @@ function getLendingInfo(bookId) { // Changed parameter name
  * @return {object} 処理結果メッセージとログ情報を含むオブジェクト
  */
 function processReturnForm(bookId) { // Changed parameter name
+  return runWithScriptLock_(
+    () => processReturnForm_(bookId),
+    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}`, logs: ["スクリプトロックを取得できませんでした。"] }
+  );
+}
+
+function processReturnForm_(bookId) {
   // ログを収集するための配列
   const logs = [];
   
@@ -889,6 +928,13 @@ function findRentalRecords(bookId) {
  * @return {Object} 処理結果とメッセージ
  */
 function processBulkReturnByRowNumbers(records) {
+  return runWithScriptLock_(
+    () => processBulkReturnByRowNumbers_(records),
+    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+  );
+}
+
+function processBulkReturnByRowNumbers_(records) {
   console.log("一括返却データ受信（行番号版）:", records);
   let successCount = 0;
   let errorCount = 0;
@@ -959,6 +1005,13 @@ function processBulkReturnByRowNumbers(records) {
  * @return {Object} 処理結果とメッセージ
  */
 function processBulkReturnWithDetails(bookRecords) {
+  return runWithScriptLock_(
+    () => processBulkReturnWithDetails_(bookRecords),
+    { message: `返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+  );
+}
+
+function processBulkReturnWithDetails_(bookRecords) {
   console.log("一括返却データ受信（詳細版）:", bookRecords);
   let successCount = 0;
   let notFoundCount = 0;
@@ -1086,6 +1139,13 @@ function processBulkReturnWithDetails(bookRecords) {
 
 // 既存の関数（互換性のため残す）
 function processBulkReturn(bookIds) {
+  return runWithScriptLock_(
+    () => processBulkReturn_(bookIds),
+    { message: `一括返却処理失敗: ${LOCK_BUSY_MESSAGE}` }
+  );
+}
+
+function processBulkReturn_(bookIds) {
   console.log("一括返却データ受信:", bookIds);
   let successCount = 0;
   let notFoundCount = 0;
@@ -1213,6 +1273,13 @@ function processBulkReturn(bookIds) {
  * @return {string} 処理結果メッセージ
  */
 function processBulkLending(bulkData) {
+  return runWithScriptLock_(
+    () => processBulkLending_(bulkData),
+    `一括貸出失敗: ${LOCK_BUSY_MESSAGE}`
+  );
+}
+
+function processBulkLending_(bulkData) {
   console.log("一括貸出データ受信:", bulkData);
   let successCount = 0;
   let errorCount = 0;
@@ -1459,6 +1526,13 @@ function fetchBookInfo(isbn) {
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function registerBook(bookData) {
+  return runWithScriptLock_(
+    () => registerBook_(bookData),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function registerBook_(bookData) {
   console.log("registerBook関数が呼び出されました:", JSON.stringify(bookData));
   
   if (!bookData || !bookData.isbn || !bookData.title) {
@@ -2264,18 +2338,36 @@ function generateNewUserId() {
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function registerUser(userData) {
+  return runWithScriptLock_(
+    () => registerUser_(userData),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function registerUser_(userData) {
   if (!userData || !userData.userName || !userData.userAddress) {
     return { success: false, message: "氏名と住所は必須です。" };
   }
-  
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const userSheet = ss.getSheetByName("利用者DB");
-    
+
     if (!userSheet) {
       return { success: false, message: "利用者DBシートが見つかりません。" };
     }
-    
+
+    // 利用者IDの重複チェック（クライアント側でIDを採番してから登録するまでの間に
+    // 別端末が同じIDで登録している可能性があるため、ロック内で再採番する）
+    if (userData.userId) {
+      const existingIds = userSheet.getDataRange().getValues()
+        .slice(1)
+        .map(row => (row[0] || "").toString().trim());
+      if (existingIds.includes(userData.userId.toString().trim())) {
+        userData.userId = generateNewUserId();
+      }
+    }
+
     // 新しい行を追加
     const newRow = [
       userData.userId,
