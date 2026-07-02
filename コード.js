@@ -1952,7 +1952,18 @@ function backupReturnedData(targetSpreadsheetId) {
         }
         return copy;
       };
-      const targetHeaders = trimTrailingBlanks(targetData[0]);
+      // バックアップ先も過去のバックアップでH列に返却日時が入っているのにH1が空の
+      // 旧形式のことがあるため、元シートと同様に正規化する。誤って無関係なシートへ
+      // ヘッダーを書き込まないよう、A〜Gの7列が元シートと一致する場合に限る
+      const targetHeaderRow = targetData[0].slice();
+      const targetPrefixMatches =
+        targetHeaderRow.slice(0, 7).join("\t") === headers.slice(0, 7).join("\t");
+      if (targetPrefixMatches && targetData.length > 1 &&
+          targetHeaderRow.length >= 8 && !targetHeaderRow[7]) {
+        targetSheet.getRange(1, 8).setValue("返却日時");
+        targetHeaderRow[7] = "返却日時";
+      }
+      const targetHeaders = trimTrailingBlanks(targetHeaderRow);
       const sourceHeaders = trimTrailingBlanks(headers);
       // 貸出記録の元来の列構成(A:書籍ID〜G:返却状況、H:返却日時があればそこまで)は
       // 最低限そろっていることを要求する(先頭数列だけ偶然一致する無関係なシートへの誤追記を防ぐ)
