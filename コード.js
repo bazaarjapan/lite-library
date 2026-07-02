@@ -1946,8 +1946,14 @@ function backupReturnedData(targetSpreadsheetId) {
       const returnDateHeaderIndex = headers.findIndex(h => h === "返却日時");
       const requiredColumnCount = returnDateHeaderIndex >= 0 ? returnDateHeaderIndex + 1 : headers.length;
       const overlap = Math.min(targetHeaders.length, headers.length);
+      // 片側にしか存在しない列は「最終通知日」のみ許容する
+      // (バックアップ先に無関係な列が余分にあるシートへの誤追記を防ぐ)
+      const extraColumnsAllowed =
+        targetHeaders.slice(overlap).every(h => h === "最終通知日") &&
+        headers.slice(overlap).every(h => h === "最終通知日");
       const isCompatible = targetHeaders.length >= requiredColumnCount &&
-        targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t");
+        targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t") &&
+        extraColumnsAllowed;
       if (!isCompatible) {
         return {
           success: false,
@@ -2625,15 +2631,17 @@ function sendOverdueNotifications() {
     }
 
     // 貸出記録: A:書籍ID, B:書籍名, C:利用者ID, D:利用者名, E:貸出日時,
-    //           F:返却予定日, G:返却状況, H:返却日時, I:最終通知日
-    const LAST_NOTIFIED_COL = 9; // I列(1始まり)
+    //           F:返却予定日, G:返却状況, H:返却日時, +「最終通知日」列
     const data = lendingSheet.getDataRange().getValues();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // I列のヘッダーが未設定なら設定する
-    if (data.length > 0 && !data[0][LAST_NOTIFIED_COL - 1]) {
-      lendingSheet.getRange(1, LAST_NOTIFIED_COL).setValue("最終通知日");
+    // 「最終通知日」列をヘッダー名で特定する。存在しない場合は末尾に追加する
+    // (I列に別の用途の列が既にあるシートを上書きしないため、位置は固定しない)
+    let lastNotifiedCol = data.length > 0 ? data[0].indexOf("最終通知日") + 1 : 0; // 1始まり
+    if (lastNotifiedCol === 0) {
+      lastNotifiedCol = (data.length > 0 ? data[0].length : 8) + 1;
+      lendingSheet.getRange(1, lastNotifiedCol).setValue("最終通知日");
     }
 
     let sent = 0;
@@ -2652,7 +2660,7 @@ function sendOverdueNotifications() {
       const overdueDays = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
 
       // 通知間隔チェック: 最終通知日から notifyIntervalDays 未満なら再通知しない
-      const lastNotified = row.length > LAST_NOTIFIED_COL - 1 ? row[LAST_NOTIFIED_COL - 1] : "";
+      const lastNotified = row.length > lastNotifiedCol - 1 ? row[lastNotifiedCol - 1] : "";
       if (lastNotified instanceof Date && !isNaN(lastNotified)) {
         // 時刻成分を切り捨てて日付単位で比較する(9時送信の時刻が残ると間隔が1日長く判定されるため)
         const lastNotifiedDay = new Date(lastNotified);
@@ -2686,7 +2694,7 @@ function sendOverdueNotifications() {
           subject: `【${libraryName}】返却期限超過のお知らせ`,
           body: body
         });
-        lendingSheet.getRange(i + 1, LAST_NOTIFIED_COL).setValue(new Date());
+        lendingSheet.getRange(i + 1, lastNotifiedCol).setValue(new Date());
         sent++;
         console.log(`延滞通知送信: ${userId} (${email}) - ${row[1]}`);
       } catch (mailError) {
