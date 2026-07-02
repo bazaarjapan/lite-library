@@ -1885,10 +1885,17 @@ function registerBook_(bookData) {
     
     // ヘッダー行の確認と設定
     const range = bookSheet.getDataRange();
-    if (!range || range.getNumRows() === 0) {
+    if (!range || bookSheet.getLastRow() === 0) {
       console.log("書籍DBが空です。ヘッダー行を追加します。");
       // 新しいヘッダー行を追加（管理番号カラムを含む）
       bookSheet.getRange(1, 1, 1, 7).setValues([["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"]]);
+    } else if (!isNewBookLayout_(bookSheet)) {
+      // 旧レイアウトのシートに新形式の行を追記すると列がずれて混在し、
+      // 書籍IDが正しく認識されなくなるため、先に移行を促す
+      return {
+        success: false,
+        message: "書籍DBが旧レイアウトのままです。スプレッドシートの管理メニューから「書籍DBを新レイアウトへ移行」を実行してから登録してください。"
+      };
     }
     
     const data = bookSheet.getDataRange().getValues();
@@ -2336,6 +2343,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
       .createMenu('管理メニュー')
       .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
+      .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
       .addItem('バーコード生成', 'generateBarcodesForSheet')
       .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
       .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
@@ -2427,6 +2435,120 @@ function setupLibrarySystemFromMenu() {
     result.message,
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+/**
+ * 管理メニューから書籍DBのレイアウト移行を実行する関数
+ */
+function migrateBookDbLayoutFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert(
+    '書籍DBを新レイアウトへ移行',
+    '書籍DBを新レイアウト(管理番号/ISBN/書籍名/著者名/出版社/備考/状態)へ変換します。\n' +
+    '旧形式の行は列をずらして変換し、既に新形式の行はそのまま維持します。\n実行しますか?',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (confirm !== ui.Button.OK) return;
+
+  const result = migrateBookDbLayout();
+  ui.alert(
+    result.success ? '書籍DB移行' : '書籍DB移行失敗',
+    result.message,
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * 書籍DBを新レイアウトへ移行する関数
+ * 旧レイアウト(A:書籍ID, B:書籍名, C:著者名, D:出版社, E:備考)のヘッダーのまま
+ * 新レイアウトの行が追記されて混在した状態を解消する。冪等(新形式の行はそのまま)。
+ * @return {object} 処理結果 {success: boolean, message: string, migrated: number, kept: number}
+ */
+function migrateBookDbLayout() {
+  return runWithScriptLock_(
+    () => migrateBookDbLayout_(),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function migrateBookDbLayout_() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const bookSheet = ss.getSheetByName("書籍DB");
+    if (!bookSheet) {
+      return { success: false, message: "書籍DBシートが見つかりません。" };
+    }
+    if (bookSheet.getLastRow() === 0) {
+      return { success: false, message: "書籍DBが空のため移行は不要です。初期セットアップを実行してください。" };
+    }
+    if (isNewBookLayout_(bookSheet)) {
+      return { success: true, message: "書籍DBは既に新レイアウトです。移行は不要です。", migrated: 0, kept: 0 };
+    }
+
+    const data = bookSheet.getDataRange().getValues();
+
+    // 状態(在庫/貸出中)の導出用に、貸出記録から未返却の書籍IDを集める
+    const unreturnedIds = new Set();
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    if (lendingSheet && lendingSheet.getLastRow() > 1) {
+      const lendingData = lendingSheet.getRange(1, 1, lendingSheet.getLastRow(), 7).getValues();
+      for (let i = 1; i < lendingData.length; i++) {
+        if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
+          unreturnedIds.add(lendingData[i][0].toString().trim().toLowerCase());
+        }
+      }
+    }
+
+    const newRows = [];
+    let migrated = 0;
+    let kept = 0;
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const colA = row[0] === undefined || row[0] === null ? "" : row[0].toString().trim();
+      const colB = row[1] === undefined || row[1] === null ? "" : row[1].toString().trim();
+      if (!colA) continue; // 空行は除去
+
+      // 新形式の行の判定: B列が妥当なISBNで、A列(管理番号)がそのISBNから始まる
+      const normalizedB = normalizeIsbn_(colB);
+      const isNewFormatRow = isValidIsbn_(normalizedB) && colA.indexOf(normalizedB) === 0;
+
+      // 状態は既存のG列を信用せず、全行とも貸出記録(未返却)から導出する。
+      // 旧ヘッダーのシートでは貸出・返却時の状態更新が正しい列に届いておらず、
+      // 新形式の行でもG列が古いままの可能性があるため
+      const status = unreturnedIds.has(colA.toLowerCase()) ? "貸出中" : "在庫";
+
+      if (isNewFormatRow) {
+        newRows.push([colA, normalizedB, row[2] || "", row[3] || "", row[4] || "", row[5] || "", status]);
+        kept++;
+      } else {
+        // 旧形式: A=書籍ID(通常ISBN), B=書籍名, C=著者名, D=出版社, E=備考
+        // 管理番号には元の書籍IDをそのまま使い、貸出記録との対応を維持する
+        const normalizedA = normalizeIsbn_(colA);
+        const isbn = isValidIsbn_(normalizedA) ? normalizedA : "";
+        newRows.push([colA, isbn, colB, row[2] || "", row[3] || "", row[4] || "", status]);
+        migrated++;
+      }
+    }
+
+    // ヘッダーと全データ行を新レイアウトで書き戻す
+    bookSheet.getRange(1, 1, 1, 7).setValues([["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"]]);
+    bookSheet.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#f3f3f3");
+    if (newRows.length > 0) {
+      bookSheet.getRange(2, 1, newRows.length, 7).setValues(newRows);
+    }
+    // 空行除去などで行数が減った場合、残った旧データをクリアする
+    const oldDataRows = data.length - 1;
+    if (oldDataRows > newRows.length) {
+      bookSheet.getRange(2 + newRows.length, 1, oldDataRows - newRows.length, bookSheet.getLastColumn()).clearContent();
+    }
+
+    const message = `書籍DBを新レイアウトへ移行しました。旧形式から変換: ${migrated}件 / 既に新形式: ${kept}件`;
+    console.log(message);
+    return { success: true, message: message, migrated: migrated, kept: kept };
+  } catch (error) {
+    console.error(`書籍DBの移行中にエラーが発生しました: ${error}`);
+    return { success: false, message: `書籍DBの移行に失敗しました: ${error.message}` };
+  }
 }
 
 /**
