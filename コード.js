@@ -83,7 +83,19 @@ function doGet(e) {
  * @return {string} WebアプリのURL
  */
 function getWebAppUrl() {
-  return ScriptApp.getService().getUrl();
+  const url = ScriptApp.getService().getUrl();
+  const domain = 'bazaarjapan.com';
+
+  if (!url) {
+    return url;
+  }
+
+  // Google WorkspaceアカウントのChromeでは /macros/u/1/s/... に補正されて404になることがあるため、
+  // 同じデプロイIDのドメイン付きURLをアプリ内リンクに使う。
+  return url.replace(
+    'https://script.google.com/macros/s/',
+    `https://script.google.com/a/macros/${domain}/s/`
+  );
 }
 
 /**
