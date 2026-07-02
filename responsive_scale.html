@@ -7,15 +7,20 @@
    * max-width系メディアクエリ(スマホ向け)には影響しない。
    */
 
+  /*
+   * min-height条件は、幅が768pxを超えるスマホ横向き(高さ約320〜430px)を
+   * 除外するためのもの。iPadは横向きでも高さ744px以上なので対象のまま。
+   */
+
   /* iPad縦向きなどの中間サイズ */
-  @media (min-width: 768px) and (max-width: 1023.98px) {
+  @media (min-width: 768px) and (max-width: 1023.98px) and (min-height: 500px) {
     body {
       zoom: 0.65;
     }
   }
 
   /* PC・iPad横向きなどの広い画面 */
-  @media (min-width: 1024px) {
+  @media (min-width: 1024px) and (min-height: 500px) {
     body {
       zoom: 0.5;
     }
