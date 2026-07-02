@@ -576,6 +576,11 @@
         #rental-records {
           grid-column: 2;
           grid-row: 2 / span 2;
+          min-width: 0; /* グリッドアイテムが内容幅で膨らまないようにする */
+        }
+        /* 結果テーブルは列数が多いため、カラム幅を超える場合は横スクロールさせる */
+        #rental-records #records-container {
+          overflow-x: auto;
         }
       }
     </style>
