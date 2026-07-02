@@ -1935,7 +1935,11 @@ function backupReturnedData(targetSpreadsheetId) {
     if (targetIsEmpty) {
       targetSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     } else {
-      const targetHeaders = targetData[0].filter(cell => cell !== "");
+      // 末尾の空セルのみ除去する(途中の空セルは列ずれとして検出したいので位置を保持する)
+      const targetHeaders = targetData[0].slice();
+      while (targetHeaders.length > 0 && targetHeaders[targetHeaders.length - 1] === "") {
+        targetHeaders.pop();
+      }
       const overlap = Math.min(targetHeaders.length, headers.length);
       const isCompatible = targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t");
       if (!isCompatible) {
