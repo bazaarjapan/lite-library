@@ -556,6 +556,28 @@
         position: relative;
         z-index: 2;
       }
+
+      /* PC・iPad(1024px以上): 2カラムレイアウト(左=利用者ID入力+検索、右=未返却一覧)。
+         スクロールなしで返却フロー全体を1画面に収める。スマホは縦積みのまま */
+      @media (min-width: 1024px) {
+        .container {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          column-gap: 60px;
+          align-items: start;
+        }
+        .container > h1 {
+          grid-column: 1 / -1;
+        }
+        .container > .form-group,
+        .container > button {
+          grid-column: 1;
+        }
+        #rental-records {
+          grid-column: 2;
+          grid-row: 2 / span 2;
+        }
+      }
     </style>
   </head>
   <body>

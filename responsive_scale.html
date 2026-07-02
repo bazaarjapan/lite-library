@@ -27,4 +27,25 @@
       zoom: 0.5;
     }
   }
+
+  /*
+   * 操作結果メッセージ(#message / #status-message)を画面上部に固定表示する。
+   * 従来はページ最下部にあり、PCでは操作しても結果が画面外に表示され
+   * 「何も起きていない」ように見えていた。空のときは表示しない。
+   * 文字色は各ページのクラス(成功/エラー)をそのまま継承する。
+   */
+  #message:not(:empty),
+  #status-message:not(.hidden):not(:empty) {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1500;
+    margin: 0;
+    padding: 24px 36px;
+    background: rgba(255, 255, 253, 0.97);
+    border-bottom: 4px solid #d4af37;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    text-align: center;
+  }
 </style>
