@@ -698,8 +698,9 @@
         });
          // 書籍ID Enterキー
          document.getElementById('book-id').addEventListener('keypress', (event) => {
-          // fieldsetが有効な場合のみ処理
-          if (!document.getElementById('book-section').disabled && event.key === 'Enter' && !bookIdScanning) {
+          // fieldsetが有効な場合のみ処理(スキャンウィンドウが開いていても手入力は受け付ける)
+          if (!document.getElementById('book-section').disabled && event.key === 'Enter') {
+             if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.close();
              const bookId = document.getElementById('book-id').value.trim();
              if (bookId) {
                  addBookToList(bookId); // 手入力されたIDを追加
@@ -708,8 +709,9 @@
         });
         // 書籍ID検索ボタン
         document.getElementById('search-book-button').addEventListener('click', () => {
-          // fieldsetが有効な場合のみ処理
-          if (!document.getElementById('book-section').disabled && !bookIdScanning) {
+          // fieldsetが有効な場合のみ処理(スキャンウィンドウが開いていても手入力は受け付ける)
+          if (!document.getElementById('book-section').disabled) {
+            if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.close();
             const bookId = document.getElementById('book-id').value.trim();
             if (bookId) {
               addBookToList(bookId); // 手入力されたIDを追加
@@ -725,23 +727,24 @@
         });
         // 利用者ID手入力変更時
         document.getElementById('user-id').addEventListener('change', (event) => {
-            if (!userScanning) fetchUserInfo(event.target.value.trim());
+            if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.close();
+            fetchUserInfo(event.target.value.trim());
         });
          // 利用者ID Enterキー
         document.getElementById('user-id').addEventListener('keypress', (event) => {
-          if (event.key === 'Enter' && !userScanning) {
+          if (event.key === 'Enter') {
+            if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.close();
             fetchUserInfo(event.target.value.trim());
           }
         });
         // 利用者ID検索ボタン
         document.getElementById('search-user-button').addEventListener('click', () => {
-          if (!userScanning) {
-            const userId = document.getElementById('user-id').value.trim();
-            if (userId) {
-              fetchUserInfo(userId);
-            } else {
-              setMessage("利用者IDを入力してください。");
-            }
+          if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.close();
+          const userId = document.getElementById('user-id').value.trim();
+          if (userId) {
+            fetchUserInfo(userId);
+          } else {
+            setMessage("利用者IDを入力してください。");
           }
         });
       }
