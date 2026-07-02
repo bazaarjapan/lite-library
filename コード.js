@@ -942,6 +942,22 @@ function findRentalRecords(bookId) {
  * @param {Array} records - 返却する書籍の行番号配列 [{rowNumber: number, bookId: string}, ...]
  * @return {Object} 処理結果とメッセージ
  */
+/**
+ * 返却された書籍の書籍DB状態を「在庫」に戻す補助関数
+ * 貸出記録側の返却処理は既に成功しているため、状態更新の失敗はログに留めて処理を継続する。
+ * @param {string[]} bookIds - 返却された書籍ID(管理番号)の配列
+ */
+function markBooksAsAvailable_(bookIds) {
+  const uniqueIds = [...new Set(bookIds.filter(id => id))];
+  uniqueIds.forEach(bookId => {
+    try {
+      updateBookStatus(bookId, "在庫");
+    } catch (e) {
+      console.error(`書籍DBの状態更新に失敗しました (ID: ${bookId}): ${e}`);
+    }
+  });
+}
+
 function processBulkReturnByRowNumbers(records) {
   return runWithScriptLock_(
     () => processBulkReturnByRowNumbers_(records),
@@ -972,15 +988,17 @@ function processBulkReturnByRowNumbers_(records) {
 
     // 行番号でソート（大きい順）して、行の削除や更新で番号がずれないようにする
     const sortedRecords = records.sort((a, b) => b.rowNumber - a.rowNumber);
+    const returnedBookIds = [];
 
     sortedRecords.forEach(record => {
       const { rowNumber, bookId } = record;
-      
+
       try {
         // 行番号を使用して直接セルを更新
         lendingSheet.getRange(rowNumber, statusColIndex).setValue("返却済");
         lendingSheet.getRange(rowNumber, returnDateColIndex).setValue(currentDate);
         successCount++;
+        returnedBookIds.push(bookId);
         console.log(`返却処理完了: 書籍ID=${bookId} (行 ${rowNumber})`);
       } catch (e) {
         errorCount++;
@@ -988,6 +1006,9 @@ function processBulkReturnByRowNumbers_(records) {
         console.error(`行 ${rowNumber} の更新エラー:`, e);
       }
     });
+
+    // 書籍DBの状態を「在庫」に戻す
+    markBooksAsAvailable_(returnedBookIds);
 
     // 結果メッセージを生成
     let message = "";
@@ -1088,7 +1109,7 @@ function processBulkReturnWithDetails_(bookRecords) {
           if (dateMatch || (!lendingDate && !rowLendingDate)) {
             recordFound = true;
             // 更新リストに追加
-            updates.push({ row: i + 1, col: statusColIndex + 1, value: "返却済" });
+            updates.push({ row: i + 1, col: statusColIndex + 1, value: "返却済", bookId: bookId });
             updates.push({ row: i + 1, col: returnDateColIndex + 1, value: currentDate });
             successCount++;
             console.log(`返却処理準備完了: 書籍ID=${bookId}, 利用者ID=${userId} (行 ${i + 1})`);
@@ -1105,10 +1126,14 @@ function processBulkReturnWithDetails_(bookRecords) {
     });
 
     // まとめて更新
+    const returnedBookIds = [];
     if (updates.length > 0) {
       updates.forEach(update => {
         try {
           lendingSheet.getRange(update.row, update.col).setValue(update.value);
+          if (update.bookId) {
+            returnedBookIds.push(update.bookId);
+          }
         } catch (e) {
           console.error(`行 ${update.row}, 列 ${update.col} の更新中にエラー: ${e}`);
           errorCount++;
@@ -1116,6 +1141,9 @@ function processBulkReturnWithDetails_(bookRecords) {
         }
       });
     }
+
+    // 書籍DBの状態を「在庫」に戻す
+    markBooksAsAvailable_(returnedBookIds);
 
     // 結果メッセージを生成
     let message = "";
@@ -1221,7 +1249,7 @@ function processBulkReturn_(bookIds) {
 
           if (rowStatus === "未返却") {
             // 更新リストに追加
-            updates.push({ row: rowIndex, col: statusColIndex + 1, value: "返却済" });
+            updates.push({ row: rowIndex, col: statusColIndex + 1, value: "返却済", bookId: trimmedBookId });
             updates.push({ row: rowIndex, col: returnDateColIndex + 1, value: currentDate });
             successCount++;
             console.log(`返却処理準備完了: 書籍ID=${trimmedBookId} (行 ${rowIndex})`);
@@ -1240,10 +1268,14 @@ function processBulkReturn_(bookIds) {
     });
 
     // まとめて更新 (GASのAPI呼び出し回数を減らすため)
+    const returnedBookIds = [];
     if (updates.length > 0) {
       updates.forEach(update => {
         try {
           lendingSheet.getRange(update.row, update.col).setValue(update.value);
+          if (update.bookId) {
+            returnedBookIds.push(update.bookId);
+          }
         } catch (e) {
            // 個別の更新エラー処理
            console.error(`行 ${update.row}, 列 ${update.col} の更新中にエラー: ${e}`);
@@ -1259,6 +1291,9 @@ function processBulkReturn_(bookIds) {
       });
       console.log(`${successCount}件の返却処理を更新しました。`);
     }
+
+    // 書籍DBの状態を「在庫」に戻す
+    markBooksAsAvailable_(returnedBookIds);
 
     // 結果メッセージの組み立て
     let message = `${successCount}件の返却処理に成功しました。`;
