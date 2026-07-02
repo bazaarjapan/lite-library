@@ -339,6 +339,17 @@ function processLendingForm_(formData) {
       throw new Error("この書籍は既に貸出中です。");
     }
 
+    // 貸出記録側にも未返却レコードがないか確認する
+    // (過去データで書籍DBの状態が「在庫」のまま貸出中の本による二重貸出を防ぐ)
+    const lendingData = lendingSheet.getDataRange().getValues();
+    const targetBookId = formData.bookId.toString().trim();
+    for (let i = 1; i < lendingData.length; i++) {
+      const rowBookId = lendingData[i][0] ? lendingData[i][0].toString().trim() : "";
+      if (rowBookId === targetBookId && lendingData[i][6] === "未返却") {
+        throw new Error("この書籍には未返却の貸出記録があります。先に返却処理を行ってください。");
+      }
+    }
+
     const lendingDate = new Date(); // 現在日時を貸出日時とする
 
     // 設定から貸出期間を取得
@@ -1321,6 +1332,16 @@ function processBulkLending_(bulkData) {
       }
     }
 
+    // 貸出記録から未返却の書籍IDを収集する
+    // (旧レイアウトや過去データで書籍DBのG列が「在庫」のまま貸出中の本があっても二重貸出を防ぐ)
+    const lendingData = lendingSheet.getDataRange().getValues();
+    const activeLoanIds = new Set();
+    for (let i = 1; i < lendingData.length; i++) {
+      if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
+        activeLoanIds.add(lendingData[i][0].toString().trim());
+      }
+    }
+
     // 設定から貸出期間を取得
     let lendingDays = 14; // デフォルト値
     try {
@@ -1358,9 +1379,16 @@ function processBulkLending_(bulkData) {
         console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} は「${book.status}」のため貸出できません。`);
         return;
       }
+      if (activeLoanIds.has(trimmedBookId)) {
+        errorCount++;
+        errorMessages.push(`${trimmedBookId}（未返却の貸出記録あり）`);
+        console.warn(`貸出スキップ: 書籍ID ${trimmedBookId} には未返却の貸出記録が存在します。`);
+        return;
+      }
 
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
       book.status = "貸出中";
+      activeLoanIds.add(trimmedBookId);
 
       // スプレッドシートに追加するデータ配列
       rowsToAdd.push([
