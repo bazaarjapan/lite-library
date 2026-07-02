@@ -1,0 +1,23 @@
+<style>
+  /*
+   * 共通レスポンシブ調整(includeHtml_('responsive_scale') で各ページのheadに読み込む)。
+   * 各ページのスタイルはスマホ向けの大きなpx値で書かれているため、
+   * 画面の広いデバイスではページ全体を縮小して等価なレイアウトを保つ。
+   * メディアクエリは実ビューポート幅で評価されるので、各ページ内の
+   * max-width系メディアクエリ(スマホ向け)には影響しない。
+   */
+
+  /* iPad縦向きなどの中間サイズ */
+  @media (min-width: 768px) and (max-width: 1023.98px) {
+    body {
+      zoom: 0.65;
+    }
+  }
+
+  /* PC・iPad横向きなどの広い画面 */
+  @media (min-width: 1024px) {
+    body {
+      zoom: 0.5;
+    }
+  }
+</style>

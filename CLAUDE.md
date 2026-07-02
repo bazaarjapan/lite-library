@@ -13,15 +13,16 @@ clasp push          # Upload local files to the Apps Script project
 clasp pull          # Download remote changes
 clasp open-script   # Open the project in the Apps Script editor
 clasp deploy        # Create a new web app deployment
+node --check コード.js  # Verify syntax locally before pushing (the only local check)
 ```
 
 The script ID is in `.clasp.json`. Manual test helpers exist in コード.js (`testUserDatabase`, `testGetUserDetails`) and are run from the Apps Script editor, not locally.
 
 ## Architecture
 
-**Server:** the entire backend lives in a single file, `コード.js` (~3,500 lines of standalone functions). `doGet(e)` is the entry point: it maps the `?page=` URL parameter (e.g. `checkout`, `return`, `register`, `overdue`) to an HTML file name via a switch statement. **Adding a new page requires both a new HTML file and a new case in `doGet`.**
+**Server:** the entire backend lives in a single file, `コード.js` (~4,400 lines of standalone functions). `doGet(e)` is the entry point: it maps the `?page=` URL parameter (e.g. `checkout`, `return`, `register`, `overdue`) to an HTML file name via a switch statement. **Adding a new page requires both a new HTML file and a new case in `doGet`.**
 
-**Client:** each `*.html` file is a fully self-contained page (inline CSS and JS, no shared templates or includes). Pages call server functions with `google.script.run.withSuccessHandler(...).withFailureHandler(...).functionName(args)`. Barcode scanning (ISBN / user cards) uses QuaggaJS loaded from a CDN, which is why `doGet` sets `XFrameOptionsMode.ALLOWALL`.
+**Client:** each `*.html` file is a mostly self-contained page (inline CSS and JS). Pages are served via `HtmlService.createTemplateFromFile(page).evaluate()`, so scriptlets work; shared partials are pulled in with `<?!= includeHtml_('...'); ?>`: `responsive_scale.html` (included in every page's `<head>`; on wide screens — iPad 768px+, PC 1024px+ — it applies `body { zoom }` to shrink the phone-tuned px sizes, leaving smartphone rendering untouched) and `barcode_scanner.html`. The latter exposes `window.LiteLibraryBarcodeScanner` (`configure` / `open` / `close` / `switchCamera`) — pages call `configure({contexts, onScan, ...})` rather than implementing their own QuaggaJS scanner. Pages call server functions with `google.script.run.withSuccessHandler(...).withFailureHandler(...).functionName(args)`. QuaggaJS is loaded from a CDN, which is why `doGet` sets `XFrameOptionsMode.ALLOWALL`. In-app links use `getWebAppUrl()`, which rewrites the deployment URL to the domain-scoped form (`/a/macros/bazaarjapan.com/s/...`) so Google Workspace accounts don't hit 404s.
 
 **Data store:** the container-bound Google Spreadsheet is the database (`SpreadsheetApp.getActiveSpreadsheet()`). Sheets are looked up by hard-coded Japanese names:
 
@@ -38,7 +39,7 @@ Column positions and header names are hard-coded as array indices throughout コ
 - **Return shape:** mutating functions return `{success: boolean, message: string, ...}`; clients branch on `response.success` (never on message text). Return-heavy functions also include `logs`, `successCount`, etc.
 - **Sheet lookups:** use the TextFinder helpers — `findRowByValue_(sheet, col, value, {matchCase})` for unique IDs (fast path + trimmed-scan fallback) and `findRowsByValue_` for all matches (always a single-column trimmed scan). Avoid `getDataRange().getValues()` full scans in per-transaction paths; bulk operations read the sheet once up front.
 - **Validation:** shared helpers `isValidIsbn_` (ISBN-10 format / ISBN-13 checksum), `validateRequired_`, `isValidEmail_` are applied server-side in registration paths.
-- Book metadata for registration is fetched from the Google Books API (`fetchBookInfo`) via `UrlFetchApp`.
+- Book metadata for registration is fetched by `fetchBookInfo` via `UrlFetchApp`: openBD first (`fetchBookInfoFromOpenBd_`), falling back to the Google Books API (`fetchBookInfoFromGoogleBooks_`) only when openBD has no hit.
 
 **Operational features (run from the spreadsheet's 管理メニュー, defined in `onOpen`):**
 - `setupLibrarySystem` — idempotent initial setup: creates the 4 sheets with correct headers on a blank spreadsheet; never overwrites existing data.
