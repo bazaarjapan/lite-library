@@ -2640,7 +2640,9 @@ function sendOverdueNotifications() {
     // (I列に別の用途の列が既にあるシートを上書きしないため、位置は固定しない)
     let lastNotifiedCol = data.length > 0 ? data[0].indexOf("最終通知日") + 1 : 0; // 1始まり
     if (lastNotifiedCol === 0) {
-      lastNotifiedCol = (data.length > 0 ? data[0].length : 8) + 1;
+      // H列(8列目)は返却日時用に予約されているため、最低でもI列(9列目)以降に配置する
+      // (貸出直後の行は7列しかなくヘッダーも7列のことがある)
+      lastNotifiedCol = Math.max((data.length > 0 ? data[0].length : 8) + 1, 9);
       lendingSheet.getRange(1, lastNotifiedCol).setValue("最終通知日");
     }
 
