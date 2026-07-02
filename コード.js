@@ -2647,6 +2647,7 @@ function sendOverdueNotifications() {
     let sent = 0;
     let skipped = 0;
     let failed = 0;
+    let quotaExhausted = false;
 
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
@@ -2680,6 +2681,15 @@ function sendOverdueNotifications() {
         continue;
       }
 
+      // メール送信クォータを確認し、残量がなければ以降の送信を打ち切る
+      // (残りは翌日のトリガー実行時に再送される)
+      if (MailApp.getRemainingDailyQuota() <= 0) {
+        console.warn("メール送信の1日あたりのクォータを使い切ったため、残りの延滞通知を中断します。");
+        skipped++;
+        quotaExhausted = true;
+        break;
+      }
+
       const body = buildOverdueMailBody_(settings, {
         userName: row[3] || "利用者",
         bookTitle: row[1] || "書籍",
@@ -2703,7 +2713,8 @@ function sendOverdueNotifications() {
       }
     }
 
-    const message = `延滞通知処理完了: 送信 ${sent}件 / スキップ ${skipped}件 / 失敗 ${failed}件`;
+    const message = `延滞通知処理完了: 送信 ${sent}件 / スキップ ${skipped}件 / 失敗 ${failed}件` +
+      (quotaExhausted ? "(メール送信クォータ上限のため中断。残りは翌日の実行で送信されます)" : "");
     console.log(message);
     return { success: true, sent: sent, skipped: skipped, failed: failed, message: message };
   } catch (error) {
