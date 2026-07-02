@@ -1949,11 +1949,93 @@ function getAllUserIds() {
 function onOpen() {
   SpreadsheetApp.getUi()
       .createMenu('管理メニュー')
+      .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
       .addItem('バーコード生成', 'generateBarcodesForSheet')
       .addItem('延滞リマインダー送信', 'sendOverdueReminders')
       .addItem('貸出状況レポート作成', 'generateLendingReport')
       .addItem('返却済データのバックアップ', 'showBackupDialog')
       .addToUi();
+}
+
+/**
+ * 図書館管理システムの初期セットアップを行う関数
+ * 必要な4シート(書籍DB・利用者DB・貸出記録・設定DB)を存在しなければ作成し、
+ * 正しいヘッダー行を設定する。既存のデータには一切触れない(冪等)。
+ * @return {object} 処理結果 {success: boolean, message: string, created: string[], skipped: string[]}
+ */
+function setupLibrarySystem() {
+  // 各シートのヘッダー定義。列の並びはコード全体でハードコードされた
+  // 列インデックスと一致させる必要がある(特に書籍DBのA1は「管理番号」必須)。
+  const sheetDefinitions = [
+    {
+      name: "書籍DB",
+      headers: ["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"]
+    },
+    {
+      name: "利用者DB",
+      headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日"]
+    },
+    {
+      name: "貸出記録",
+      headers: ["書籍ID", "書籍名", "利用者ID", "利用者名", "貸出日時", "返却予定日", "返却状況", "返却日時"]
+    }
+  ];
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const created = [];
+    const skipped = [];
+
+    sheetDefinitions.forEach(def => {
+      let sheet = ss.getSheetByName(def.name);
+      if (!sheet) {
+        sheet = ss.insertSheet(def.name);
+        created.push(def.name);
+      } else if (sheet.getLastRow() > 0) {
+        // 既にデータ(またはヘッダー)がある場合は上書きしない
+        skipped.push(def.name);
+        return;
+      } else {
+        created.push(def.name);
+      }
+      const headerRange = sheet.getRange(1, 1, 1, def.headers.length);
+      headerRange.setValues([def.headers]);
+      headerRange.setFontWeight("bold").setBackground("#f3f3f3");
+      sheet.setFrozenRows(1);
+      sheet.autoResizeColumns(1, def.headers.length);
+    });
+
+    // 設定DBは getLibrarySettings がデフォルト設定込みで作成する(既存なら何もしない)
+    const settingsExisted = !!ss.getSheetByName("設定DB");
+    getLibrarySettings();
+    if (settingsExisted) {
+      skipped.push("設定DB");
+    } else {
+      created.push("設定DB");
+    }
+
+    const parts = [];
+    if (created.length > 0) parts.push(`作成: ${created.join("、")}`);
+    if (skipped.length > 0) parts.push(`既存のためスキップ: ${skipped.join("、")}`);
+    const message = `初期セットアップが完了しました。${parts.join(" / ")}`;
+    console.log(message);
+    return { success: true, message: message, created: created, skipped: skipped };
+  } catch (error) {
+    console.error(`初期セットアップ中にエラーが発生しました: ${error}`);
+    return { success: false, message: `初期セットアップに失敗しました: ${error.message}`, created: [], skipped: [] };
+  }
+}
+
+/**
+ * スプレッドシートのメニューから初期セットアップを実行し、結果をダイアログ表示する関数
+ */
+function setupLibrarySystemFromMenu() {
+  const result = setupLibrarySystem();
+  SpreadsheetApp.getUi().alert(
+    result.success ? '初期セットアップ' : '初期セットアップ失敗',
+    result.message,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
 
 /**
