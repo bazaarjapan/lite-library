@@ -2060,8 +2060,11 @@ function generateLendingReport() {
   const data = lendingSheet.getDataRange().getValues();
   
   // ヘッダー行を除いたデータを新しいシートにコピー
+  // (レポートのヘッダーはA:Hの8列固定のため、最終通知日などI列以降は含めない)
   if (data.length > 1) {
-    reportSheet.getRange(2, 1, data.length - 1, data[0].length).setValues(data.slice(1));
+    const reportColumnCount = Math.min(data[0].length, 8);
+    reportSheet.getRange(2, 1, data.length - 1, reportColumnCount)
+      .setValues(data.slice(1).map(row => row.slice(0, reportColumnCount)));
   }
   
   // 列幅を自動調整
