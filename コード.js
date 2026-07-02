@@ -1940,8 +1940,14 @@ function backupReturnedData(targetSpreadsheetId) {
       while (targetHeaders.length > 0 && targetHeaders[targetHeaders.length - 1] === "") {
         targetHeaders.pop();
       }
+      // 貸出記録の元来の列構成(A:書籍ID〜H:返却日時)は最低限そろっていることを要求する
+      // (先頭数列だけ偶然一致する無関係なシートへの誤追記を防ぐ。許容する差分は
+      //  「返却日時」より後に追加された列(例: 最終通知日)の有無のみ)
+      const returnDateHeaderIndex = headers.findIndex(h => h === "返却日時");
+      const requiredColumnCount = returnDateHeaderIndex >= 0 ? returnDateHeaderIndex + 1 : headers.length;
       const overlap = Math.min(targetHeaders.length, headers.length);
-      const isCompatible = targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t");
+      const isCompatible = targetHeaders.length >= requiredColumnCount &&
+        targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t");
       if (!isCompatible) {
         return {
           success: false,
