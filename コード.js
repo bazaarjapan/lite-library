@@ -1482,11 +1482,15 @@ function processBulkLending_(bulkData) {
       });
     }
 
+    // 全件失敗の場合はメッセージに「成功」を含めない
+    // (lending.html は response.includes("成功") で成否判定しているため)
+    if (successCount === 0 && errorCount > 0) {
+      return `一括貸出登録失敗: すべての書籍を貸出できませんでした。${errorMessages.join(', ')}`;
+    }
     if (errorCount > 0) {
       return `貸出登録完了 (${successCount}件成功、${errorCount}件失敗)。失敗した書籍ID: ${errorMessages.join(', ')}`;
-    } else {
-      return `${successCount}件の貸出登録に成功しました。`;
     }
+    return `${successCount}件の貸出登録に成功しました。`;
 
   } catch (error) {
     console.error(`一括貸出処理中にエラーが発生しました: ${error}`);
