@@ -601,129 +601,6 @@ function processReturnForm(bookId) { // Changed parameter name
 }
 
 
-/**
- * 返却期限を過ぎた未返却の本のリマインドメールを送信する関数
- * GASのトリガー（時間主導型、例: 毎日午前1時〜2時）で実行することを想定
- */
- function sendOverdueReminders() {
-   console.log("延滞リマインダー処理開始");
-   
-   // 設定を取得
-   let settings;
-   try {
-     settings = getLibrarySettings();
-   } catch (e) {
-     console.error("設定の取得に失敗しました:", e);
-     settings = {}; // デフォルト値を使用
-   }
-   
-   // メール通知が無効の場合は処理をスキップ
-   if (settings.enableOverdue === false) {
-     console.log("延滞通知が無効になっているため、処理をスキップします。");
-     return;
-   }
-   
-   const ss = SpreadsheetApp.getActiveSpreadsheet();
-   const lendingSheet = ss.getSheetByName("貸出記録");
-   const userSheet = ss.getSheetByName("利用者DB"); // getUserInfo内で使用 & 存在チェック
-
-   if (!lendingSheet || !userSheet) {
-     console.error("必要なシート（貸出記録または利用者DB）が見つかりません。処理を中断します。");
-     return;
-   }
-
-  const data = lendingSheet.getDataRange().getValues();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0); // 時刻部分をリセットして日付のみで比較
-
-  // ヘッダー: A:書籍ID, B:書籍名, C:利用者ID, D:利用者名, E:貸出日時, F:返却予定日, G:返却状況
-  const bookIdColIndex = 0;     // A列 (Changed from isbnColIndex)
-  const titleColIndex = 1;      // B列
-  const userIdColIndex = 2;     // C列
-  const dueDateColIndex = 5;    // F列
-  const statusColIndex = 6;     // G列
-
-  let remindersSentCount = 0;
-  const errors = [];
-
-  // ヘッダー行を除く (i=1から)
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const status = row[statusColIndex];
-    const dueDateValue = row[dueDateColIndex];
-
-    // 返却状況が "未返却" かどうかチェック
-    if (status === "未返却") {
-      // 返却予定日が有効な日付オブジェクトかチェック
-      if (dueDateValue instanceof Date && !isNaN(dueDateValue)) {
-        const dueDate = new Date(dueDateValue);
-        dueDate.setHours(0, 0, 0, 0); // 時刻部分をリセット
-
-        // 返却予定日が今日より前（つまり延滞している）かチェック
-        if (dueDate < today) {
-          const userId = row[userIdColIndex];
-          const bookTitle = row[titleColIndex]; // 書籍名は貸出記録シートのB列から取得
-          const bookId = row[bookIdColIndex]; // 書籍IDも取得しておく (ログ用など)
-          const dueDateString = Utilities.formatDate(dueDate, Session.getScriptTimeZone(), "yyyy/MM/dd");
-
-          console.log(`延滞発見: 行 ${i + 1}, 書籍ID: ${bookId}, 利用者ID: ${userId}, 書籍名: ${bookTitle}, 返却予定日: ${dueDateString}`); // Updated log
-
-          try {
-            // 利用者情報を取得（メールアドレスを含む）
-            const userInfo = getUserInfo(userId);
-
-            if (userInfo && userInfo.email) {
-              const recipient = userInfo.email;
-              const libraryName = settings.libraryName || "図書館";
-              const subject = `【${libraryName}】書籍返却のお願い: ${bookTitle}`;
-              const body = `${userInfo.name} 様\n\n`
-                         + `いつも${libraryName}をご利用いただきありがとうございます。\n\n`
-                         + `貸出中の書籍『${bookTitle}』の返却期限（${dueDateString}）が過ぎています。\n`
-                         + `ご確認の上、速やかにご返却いただけますようお願いいたします。\n\n`
-                         + `ご不明な点がございましたら、${libraryName}カウンターまでお問い合わせください。\n\n`
-                         + `--\n${libraryName}図書管理システム`;
-
-              // メールの送信量を確認 (クォータ対策)
-              if (MailApp.getRemainingDailyQuota() > 0) {
-                MailApp.sendEmail(recipient, subject, body);
-                console.log(`リマインドメール送信成功: ${recipient}, 書籍: ${bookTitle}`);
-                remindersSentCount++;
-              } else {
-                 const quotaErrorMsg = "メール送信クォータ上限に達したため、これ以上のメール送信を停止しました。";
-                 console.error(quotaErrorMsg);
-                 errors.push(quotaErrorMsg);
-                 break; // クォータ超過したらループを抜ける
-              }
-            } else {
-              const noEmailMsg = `利用者ID ${userId} のメールアドレスが見つからないため、メールを送信できませんでした。`;
-              console.warn(noEmailMsg);
-              errors.push(noEmailMsg);
-            }
-          } catch (e) {
-             const sendErrorMsg = `行 ${i + 1} (利用者ID: ${userId}) のメール送信中にエラーが発生しました: ${e.message}`;
-             console.error(sendErrorMsg);
-             console.error(e);
-             errors.push(sendErrorMsg);
-          }
-           // 短時間に大量の処理を避けるための待機（任意）
-           // Utilities.sleep(500); // 0.5秒待機
-        }
-      } else {
-         // 返却予定日のデータが不正な場合（日付でないなど）
-         if (dueDateValue !== "") { // 空欄でない場合のみ警告
-            console.warn(`行 ${i + 1} の返却予定日 (${dueDateValue}) が不正な形式です。スキップします。`);
-         }
-      }
-    }
-  }
-
-  console.log(`延滞リマインダー処理完了。送信数: ${remindersSentCount}`);
-  if (errors.length > 0) {
-      console.warn("処理中に以下の警告/エラーが発生しました:");
-      errors.forEach(err => console.warn(`- ${err}`));
-      // 必要であれば管理者にエラーレポートをメールするなどの処理を追加
-  }
-}
 
 
 
@@ -1950,7 +1827,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
       .createMenu('管理メニュー')
       .addItem('バーコード生成', 'generateBarcodesForSheet')
-      .addItem('延滞リマインダー送信', 'sendOverdueReminders')
+      .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
       .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
       .addItem('延滞通知トリガー解除', 'removeOverdueTriggerFromMenu')
       .addItem('貸出状況レポート作成', 'generateLendingReport')
@@ -2826,10 +2703,18 @@ function buildOverdueMailBody_(settings, values) {
 }
 
 /**
- * onOpen メニューの「延滞リマインダー送信」から呼ばれる関数
- * (従来はこの関数が存在せずメニューが壊れていた)
+ * 旧来の時間主導トリガーとの互換ハンドラー(トリガー安全: UIを一切使わない)
+ * 既存デプロイに sendOverdueReminders を呼ぶトリガーが残っていてもそのまま動作する。
+ * 旧実装(重複通知防止なし)は sendOverdueNotifications に置き換えた。
  */
 function sendOverdueReminders() {
+  return sendOverdueNotifications();
+}
+
+/**
+ * onOpen メニューの「延滞リマインダー送信」から実行し、結果をダイアログ表示する関数
+ */
+function sendOverdueRemindersFromMenu() {
   const result = sendOverdueNotifications();
   SpreadsheetApp.getUi().alert(
     '延滞リマインダー送信',
