@@ -182,11 +182,41 @@ function findRowsByValue_(sheet, column, value, options) {
   if (lastRow < 2 || value === undefined || value === null || value.toString().trim() === "") {
     return [];
   }
+  const searchValue = value.toString().trim();
   const range = sheet.getRange(2, column, lastRow - 1, 1);
-  const finder = range.createTextFinder(value.toString().trim())
+  const finder = range.createTextFinder(searchValue)
     .matchEntireCell(true)
     .matchCase(opts.matchCase !== false);
-  return finder.findAll().map(cell => cell.getRow());
+  const rows = finder.findAll().map(cell => cell.getRow());
+  if (rows.length > 0) {
+    return rows;
+  }
+  // フォールバック: セル値に前後空白が残っている旧データは matchEntireCell で一致しないため、
+  // 対象1列だけを読み込みトリム比較する(全列読み込みよりは十分軽い)
+  return findRowsByTrimmedScan_(range, searchValue, opts.matchCase !== false);
+}
+
+/**
+ * 1列分の値を読み込み、トリム後の完全一致で行番号を探すフォールバック検索
+ * @param {Range} range - 検索対象の1列レンジ(2行目以降)
+ * @param {string} searchValue - トリム済みの検索値
+ * @param {boolean} matchCase - 大文字小文字を区別するか
+ * @return {number[]} 一致した行番号(1始まり)の配列
+ */
+function findRowsByTrimmedScan_(range, searchValue, matchCase) {
+  const values = range.getValues();
+  const target = matchCase ? searchValue : searchValue.toLowerCase();
+  const rows = [];
+  for (let i = 0; i < values.length; i++) {
+    const cell = values[i][0];
+    if (cell === "" || cell === null || cell === undefined) continue;
+    let cellText = cell.toString().trim();
+    if (!matchCase) cellText = cellText.toLowerCase();
+    if (cellText === target) {
+      rows.push(i + 2); // レンジは2行目開始
+    }
+  }
+  return rows;
 }
 
 /**
@@ -203,12 +233,18 @@ function findRowByValue_(sheet, column, value, options) {
   if (lastRow < 2 || value === undefined || value === null || value.toString().trim() === "") {
     return -1;
   }
+  const searchValue = value.toString().trim();
   const range = sheet.getRange(2, column, lastRow - 1, 1);
-  const found = range.createTextFinder(value.toString().trim())
+  const found = range.createTextFinder(searchValue)
     .matchEntireCell(true)
     .matchCase(opts.matchCase !== false)
     .findNext();
-  return found ? found.getRow() : -1;
+  if (found) {
+    return found.getRow();
+  }
+  // フォールバック: 前後空白が残っている旧データに対応(1列のみのトリム比較)
+  const rows = findRowsByTrimmedScan_(range, searchValue, opts.matchCase !== false);
+  return rows.length > 0 ? rows[0] : -1;
 }
 
 /**
