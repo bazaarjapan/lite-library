@@ -16,13 +16,13 @@ clasp deploy        # Create a new web app deployment
 node --check コード.js  # Verify syntax locally before pushing (the only local check)
 ```
 
-The script ID is in `.clasp.json`. Manual test helpers exist in コード.js (`testUserDatabase`, `testGetUserDetails`) and are run from the Apps Script editor, not locally.
+The script ID is in `.clasp.json`. Manual test helpers exist in コード.js (`testUserDatabase_`, `testGetUserDetails_`) and are run from the Apps Script editor, not locally (trailing underscore hides them from `google.script.run`).
 
 ## Architecture
 
 **Server:** the entire backend lives in a single file, `コード.js` (~4,400 lines of standalone functions). `doGet(e)` is the entry point: it maps the `?page=` URL parameter (e.g. `checkout`, `return`, `register`, `overdue`) to an HTML file name via a switch statement. **Adding a new page requires both a new HTML file and a new case in `doGet`.**
 
-**Client:** each `*.html` file is a mostly self-contained page (inline CSS and JS). Pages are served via `HtmlService.createTemplateFromFile(page).evaluate()`, so scriptlets work; shared partials are pulled in with `<?!= includeHtml_('...'); ?>`: `responsive_scale.html` (included in every page's `<head>`; on wide screens — iPad 768px+, PC 1024px+ — it applies `body { zoom }` to shrink the phone-tuned px sizes, leaving smartphone rendering untouched) and `barcode_scanner.html`. The latter exposes `window.LiteLibraryBarcodeScanner` (`configure` / `open` / `close` / `switchCamera`) — pages call `configure({contexts, onScan, ...})` rather than implementing their own QuaggaJS scanner. Pages call server functions with `google.script.run.withSuccessHandler(...).withFailureHandler(...).functionName(args)`. QuaggaJS is loaded from a CDN, which is why `doGet` sets `XFrameOptionsMode.ALLOWALL`. In-app links use `getWebAppUrl()`, which rewrites the deployment URL to the domain-scoped form (`/a/macros/bazaarjapan.com/s/...`) so Google Workspace accounts don't hit 404s.
+**Client:** each `*.html` file is a mostly self-contained page (inline CSS and JS). Pages are served via `HtmlService.createTemplateFromFile(page).evaluate()`, so scriptlets work; shared partials are pulled in with `<?!= includeHtml_('...'); ?>`: `responsive_scale.html` (included in every page's `<head>`; on wide screens — iPad 768px+, PC 1024px+ — it applies `body { zoom }` to shrink the phone-tuned px sizes, leaving smartphone rendering untouched) and `barcode_scanner.html`. The latter exposes `window.LiteLibraryBarcodeScanner` (`configure` / `open` / `close` / `switchCamera`) — pages call `configure({contexts, onScan, ...})` rather than implementing their own QuaggaJS scanner. Pages call server functions with `google.script.run.withSuccessHandler(...).withFailureHandler(...).functionName(args)`. `doGet` uses `XFrameOptionsMode.DEFAULT` (embedding restricted to Google's own wrappers; CDN library loading is unrelated to this setting). In-app links use `getWebAppUrl()`, which rewrites the deployment URL to the domain-scoped form (`/a/macros/bazaarjapan.com/s/...`) so Google Workspace accounts don't hit 404s.
 
 **Data store:** the container-bound Google Spreadsheet is the database (`SpreadsheetApp.getActiveSpreadsheet()`). Sheets are looked up by hard-coded Japanese names:
 
@@ -48,7 +48,7 @@ Column positions and header names are hard-coded as array indices throughout コ
 - `sendOverdueNotifications` — overdue email notifications; dedupes via a `最終通知日` column (located by header name, col ≥ I) and respects the daily MailApp quota. `installOverdueTrigger`/`removeOverdueTrigger` manage a daily 9:00 time-driven trigger (needs the `script.scriptapp` OAuth scope in appsscript.json).
 - `backupReturnedData` — archives returned rows to another spreadsheet; header-compatibility checks protect against appending to mismatched sheets and never clear existing backups.
 
-**Deployment config (`appsscript.json`):** web app runs as the deploying user with `ANYONE_ANONYMOUS` access; timezone is Asia/Tokyo; V8 runtime.
+**Deployment config (`appsscript.json`):** web app runs as the deploying user with `DOMAIN` access (bazaarjapan.com Google accounts only — protects 利用者DB PII from anonymous access; server functions are otherwise directly callable via `google.script.run`); timezone is Asia/Tokyo; V8 runtime. Never return more PII than the client actually renders (e.g. `getUserInfo` returns only `{name}`).
 
 ## Development workflow
 

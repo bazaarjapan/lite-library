@@ -74,7 +74,9 @@ function doGet(e) {
 
   const htmlOutput = HtmlService.createTemplateFromFile(page).evaluate()
       .setTitle(title)
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // QuaggaJSなどの外部ライブラリ読み込み許可
+      // 外部サイトからの埋め込み(クリックジャッキング)を防ぐためGoogle標準の制限に戻す。
+      // CDNからのライブラリ読み込み(QuaggaJS等)はこの設定と無関係で影響しない
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
   return htmlOutput;
 }
 
@@ -451,7 +453,7 @@ function getBookDetails(bookId) {
 /**
  * 利用者IDからスプレッドシートの利用者DBを検索して利用者情報を取得する関数
  * @param {string} userId - 利用者ID
- * @return {object|null} 利用者情報オブジェクト {name: string, email: string|null} または null
+ * @return {object|null} 利用者情報オブジェクト {name: string} または null
  */
 function getUserInfo(userId) {
   if (!userId) {
@@ -471,11 +473,11 @@ function getUserInfo(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, 3).getValues()[0];
+      const row = userSheet.getRange(rowNumber, 1, 1, 2).getValues()[0];
       const userName = row[1] || "氏名不明";
-      const userEmail = row[2] || null; // メールアドレスがない場合はnull
-      console.log(`利用者情報取得成功: ${userName}, Email: ${userEmail}`);
-      return { name: userName, email: userEmail };
+      console.log(`利用者情報取得成功: ${userName}`);
+      // クライアントは氏名しか使わないため、メールアドレス等のPIIは返さない
+      return { name: userName };
     }
     console.warn(`利用者ID ${userId} の情報が見つかりませんでした。`);
     return null; // 見つからなかった場合
@@ -2247,7 +2249,7 @@ function deleteUser_(userId) {
 /**
  * 利用者DBの構造を確認するテスト関数
  */
-function testUserDatabase() {
+function testUserDatabase_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const userSheet = ss.getSheetByName("利用者DB");
   
@@ -2285,7 +2287,7 @@ function testUserDatabase() {
 /**
  * getUserDetailsの簡易テスト関数
  */
-function testGetUserDetails() {
+function testGetUserDetails_() {
   const testId = "R00001";
   console.log("テスト開始: getUserDetails(" + testId + ")");
   
@@ -2303,7 +2305,7 @@ function testGetUserDetails() {
 /**
  * 利用者DBのすべての利用者IDを取得する関数
  */
-function getAllUserIds() {
+function getAllUserIds_() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const userSheet = ss.getSheetByName("利用者DB");
