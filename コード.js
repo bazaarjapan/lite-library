@@ -1936,23 +1936,32 @@ function backupReturnedData(targetSpreadsheetId) {
       targetSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     } else {
       // 末尾の空セルのみ除去する(途中の空セルは列ずれとして検出したいので位置を保持する)
-      const targetHeaders = targetData[0].slice();
-      while (targetHeaders.length > 0 && targetHeaders[targetHeaders.length - 1] === "") {
-        targetHeaders.pop();
-      }
-      // 貸出記録の元来の列構成(A:書籍ID〜H:返却日時)は最低限そろっていることを要求する
-      // (先頭数列だけ偶然一致する無関係なシートへの誤追記を防ぐ。許容する差分は
-      //  「返却日時」より後に追加された列(例: 最終通知日)の有無のみ)
-      const returnDateHeaderIndex = headers.findIndex(h => h === "返却日時");
-      const requiredColumnCount = returnDateHeaderIndex >= 0 ? returnDateHeaderIndex + 1 : headers.length;
-      const overlap = Math.min(targetHeaders.length, headers.length);
-      // 片側にしか存在しない列は「最終通知日」のみ許容する
-      // (バックアップ先に無関係な列が余分にあるシートへの誤追記を防ぐ)
+      // 旧形式のシートは返却処理がH列へ値を書いてもH1ヘッダーは空のままのことがあるため、
+      // 元シート(headers)側も同様に末尾の空ヘッダーを除去してから比較する
+      const trimTrailingBlanks = arr => {
+        const copy = arr.slice();
+        while (copy.length > 0 && copy[copy.length - 1] === "") {
+          copy.pop();
+        }
+        return copy;
+      };
+      const targetHeaders = trimTrailingBlanks(targetData[0]);
+      const sourceHeaders = trimTrailingBlanks(headers);
+      // 貸出記録の元来の列構成(A:書籍ID〜G:返却状況、H1設定済みならH:返却日時まで)は
+      // 最低限そろっていることを要求する(先頭数列だけ偶然一致する無関係なシートへの誤追記を防ぐ)
+      const returnDateHeaderIndex = sourceHeaders.findIndex(h => h === "返却日時");
+      const requiredColumnCount = returnDateHeaderIndex >= 0
+        ? returnDateHeaderIndex + 1
+        : Math.min(sourceHeaders.length, 7);
+      const overlap = Math.min(targetHeaders.length, sourceHeaders.length);
+      // 片側にしか存在しない列について:
+      //  - 元シート側の余分な列は「最終通知日」と、その手前の空ヘッダー(H1未設定)のみ許容
+      //  - バックアップ先側の余分な列は「最終通知日」のみ許容(無関係な列への誤追記を防ぐ)
       const extraColumnsAllowed =
         targetHeaders.slice(overlap).every(h => h === "最終通知日") &&
-        headers.slice(overlap).every(h => h === "最終通知日");
+        sourceHeaders.slice(overlap).every(h => h === "最終通知日" || h === "");
       const isCompatible = targetHeaders.length >= requiredColumnCount &&
-        targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t") &&
+        targetHeaders.slice(0, overlap).join("\t") === sourceHeaders.slice(0, overlap).join("\t") &&
         extraColumnsAllowed;
       if (!isCompatible) {
         return {
