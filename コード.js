@@ -2643,6 +2643,10 @@ function sendOverdueNotifications() {
       // H列(8列目)は返却日時用に予約されているため、最低でもI列(9列目)以降に配置する
       // (貸出直後の行は7列しかなくヘッダーも7列のことがある)
       lastNotifiedCol = Math.max((data.length > 0 ? data[0].length : 8) + 1, 9);
+      // 予約済みのH1(返却日時)が空のままだとヘッダーに空セルが挟まるため、先に埋めておく
+      if (data.length > 0 && (data[0].length < 8 || !data[0][7])) {
+        lendingSheet.getRange(1, 8).setValue("返却日時");
+      }
       lendingSheet.getRange(1, lastNotifiedCol).setValue("最終通知日");
     }
 
