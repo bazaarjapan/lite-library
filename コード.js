@@ -168,6 +168,88 @@ function isValidEmail_(email) {
 }
 
 /**
+ * 指定シートの1列を完全一致で検索し、一致した行番号をすべて返す共通ヘルパー
+ * getDataRange().getValues() による全行読み込みを避け、大量データでも高速に検索する。
+ * @param {Sheet} sheet - 検索対象シート
+ * @param {number} column - 検索する列(1始まり)
+ * @param {string} value - 検索する値(完全一致)
+ * @param {object} [options] - {matchCase: boolean} 大文字小文字を区別するか(デフォルト true)
+ * @return {number[]} 一致した行番号(1始まり)の配列。ヘッダー行(1行目)は検索対象外
+ */
+function findRowsByValue_(sheet, column, value, options) {
+  const opts = options || {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2 || value === undefined || value === null || value.toString().trim() === "") {
+    return [];
+  }
+  // 全行が必要な検索では、前後空白付きのセルと正常なセルが混在していても漏れなく拾えるよう、
+  // 常に対象1列を読み込んでトリム比較する(TextFinder の完全一致では空白付きの重複行を
+  // 見逃すため。1列のみの読み込みなので getDataRange 全走査よりは十分軽い)
+  const range = sheet.getRange(2, column, lastRow - 1, 1);
+  return findRowsByTrimmedScan_(range, value.toString().trim(), opts.matchCase !== false);
+}
+
+/**
+ * 1列分の値を読み込み、トリム後の完全一致で行番号を探すフォールバック検索
+ * @param {Range} range - 検索対象の1列レンジ(2行目以降)
+ * @param {string} searchValue - トリム済みの検索値
+ * @param {boolean} matchCase - 大文字小文字を区別するか
+ * @return {number[]} 一致した行番号(1始まり)の配列
+ */
+function findRowsByTrimmedScan_(range, searchValue, matchCase) {
+  const values = range.getValues();
+  const target = matchCase ? searchValue : searchValue.toLowerCase();
+  const rows = [];
+  for (let i = 0; i < values.length; i++) {
+    const cell = values[i][0];
+    if (cell === "" || cell === null || cell === undefined) continue;
+    let cellText = cell.toString().trim();
+    if (!matchCase) cellText = cellText.toLowerCase();
+    if (cellText === target) {
+      rows.push(i + 2); // レンジは2行目開始
+    }
+  }
+  return rows;
+}
+
+/**
+ * 指定シートの1列を完全一致で検索し、最初に一致した行番号を返す共通ヘルパー
+ * @param {Sheet} sheet - 検索対象シート
+ * @param {number} column - 検索する列(1始まり)
+ * @param {string} value - 検索する値(完全一致)
+ * @param {object} [options] - {matchCase: boolean} 大文字小文字を区別するか(デフォルト true)
+ * @return {number} 一致した行番号(1始まり)。見つからなければ -1
+ */
+function findRowByValue_(sheet, column, value, options) {
+  const opts = options || {};
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2 || value === undefined || value === null || value.toString().trim() === "") {
+    return -1;
+  }
+  const searchValue = value.toString().trim();
+  const range = sheet.getRange(2, column, lastRow - 1, 1);
+  const found = range.createTextFinder(searchValue)
+    .matchEntireCell(true)
+    .matchCase(opts.matchCase !== false)
+    .findNext();
+  if (found) {
+    return found.getRow();
+  }
+  // フォールバック: 前後空白が残っている旧データに対応(1列のみのトリム比較)
+  const rows = findRowsByTrimmedScan_(range, searchValue, opts.matchCase !== false);
+  return rows.length > 0 ? rows[0] : -1;
+}
+
+/**
+ * 書籍DBが新レイアウト(A1=管理番号)かどうかを、A1セルのみ読み取って判定する
+ * @param {Sheet} bookSheet - 書籍DBシート
+ * @return {boolean} 新レイアウトなら true
+ */
+function isNewBookLayout_(bookSheet) {
+  return bookSheet.getLastRow() > 0 && bookSheet.getRange(1, 1).getValue() === "管理番号";
+}
+
+/**
  * 利用可能な書籍を取得する関数（複数冊管理対応）
  * @param {string} isbn - ISBN
  * @return {object|null} 利用可能な書籍情報（在庫がある最初の本）
@@ -185,24 +267,16 @@ function getAvailableBook(isbn) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
-    const data = bookSheet.getDataRange().getValues();
-    
     // 新しいデータ構造のチェック
-    if (data.length > 0 && data[0][0] === "管理番号") {
-      const managementNumColIndex = 0; // A列
-      const isbnColIndex = 1;         // B列
-      const titleColIndex = 2;        // C列
-      const statusColIndex = 6;       // G列
-      
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        const rowIsbn = row[isbnColIndex] ? row[isbnColIndex].toString().trim() : "";
-        const status = row[statusColIndex] || "在庫";
-        
-        // ISBNが一致し、かつ在庫がある本を探す
-        if (rowIsbn === isbn.trim() && status === "在庫") {
-          const managementNum = row[managementNumColIndex] || "";
-          const bookTitle = row[titleColIndex] || "タイトル不明";
+    if (isNewBookLayout_(bookSheet)) {
+      // TextFinderでISBN(B列)が一致する行だけを取得し、その中から在庫のある本を探す
+      const rowNumbers = findRowsByValue_(bookSheet, 2, isbn);
+      for (const rowNumber of rowNumbers) {
+        const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
+        const status = row[6] || "在庫";
+        if (status === "在庫") {
+          const managementNum = row[0] || "";
+          const bookTitle = row[2] || "タイトル不明";
           console.log(`利用可能な書籍発見: ${bookTitle} (管理番号: ${managementNum})`);
           return {
             title: bookTitle,
@@ -213,7 +287,7 @@ function getAvailableBook(isbn) {
         }
       }
     }
-    
+
     console.log(`ISBN ${isbn} の利用可能な書籍が見つかりませんでした。`);
     return null;
   } catch (error) {
@@ -241,55 +315,44 @@ function getBookDetails(bookId) {
       throw new Error("書籍DBシートが見つかりません。");
     }
 
-    const data = bookSheet.getDataRange().getValues();
-    
     // 新しいデータ構造のチェック（管理番号がある場合）
-    if (data.length > 0 && data[0][0] === "管理番号") {
+    if (isNewBookLayout_(bookSheet)) {
       // 新構造: A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
-      const managementNumColIndex = 0; // A列
-      const isbnColIndex = 1;         // B列
-      const titleColIndex = 2;         // C列
-      const statusColIndex = 6;        // G列
-      
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        const managementNum = row[managementNumColIndex] ? row[managementNumColIndex].toString().trim() : "";
-        const isbn = row[isbnColIndex] ? row[isbnColIndex].toString().trim() : "";
-        
-        // 管理番号またはISBNで検索
-        if ((managementNum && managementNum === bookId.trim()) || 
-            (isbn && isbn === bookId.trim())) {
-          const bookTitle = row[titleColIndex] || "タイトル不明";
-          const status = row[statusColIndex] || "在庫";
-          console.log(`書籍情報取得成功: ${bookTitle} (管理番号: ${managementNum}, 状態: ${status})`);
-          return { 
-            title: bookTitle,
-            managementNumber: managementNum,
-            isbn: isbn,
-            status: status
-          };
-        }
+      // TextFinderで管理番号(A列)→ISBN(B列)の順に検索し、全行読み込みを避ける
+      let rowNumber = findRowByValue_(bookSheet, 1, bookId);
+      if (rowNumber === -1) {
+        rowNumber = findRowByValue_(bookSheet, 2, bookId);
+      }
+      if (rowNumber !== -1) {
+        const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
+        const managementNum = row[0] ? row[0].toString().trim() : "";
+        const isbn = row[1] ? row[1].toString().trim() : "";
+        const bookTitle = row[2] || "タイトル不明";
+        const status = row[6] || "在庫";
+        console.log(`書籍情報取得成功: ${bookTitle} (管理番号: ${managementNum}, 状態: ${status})`);
+        return {
+          title: bookTitle,
+          managementNumber: managementNum,
+          isbn: isbn,
+          status: status
+        };
       }
     } else {
       // 旧構造: A:書籍ID(ISBN), B:書籍名
-      const bookIdColIndex = 0; // A列
-      const titleColIndex = 1;  // B列
-      
-      for (let i = 1; i < data.length; i++) {
-        const row = data[i];
-        if (row[bookIdColIndex] && row[bookIdColIndex].toString().trim() === bookId.trim()) {
-          const bookTitle = row[titleColIndex] || "タイトル不明";
-          console.log(`書籍情報取得成功: ${bookTitle}`);
-          return { 
-            title: bookTitle,
-            managementNumber: bookId,
-            isbn: bookId,
-            status: "在庫"
-          };
-        }
+      const rowNumber = findRowByValue_(bookSheet, 1, bookId);
+      if (rowNumber !== -1) {
+        const row = bookSheet.getRange(rowNumber, 1, 1, 2).getValues()[0];
+        const bookTitle = row[1] || "タイトル不明";
+        console.log(`書籍情報取得成功: ${bookTitle}`);
+        return {
+          title: bookTitle,
+          managementNumber: bookId,
+          isbn: bookId,
+          status: "在庫"
+        };
       }
     }
-    
+
     console.warn(`書籍ID ${bookId} の情報が見つかりませんでした。`);
     return null;
   } catch (error) {
@@ -319,22 +382,15 @@ function getUserInfo(userId) {
        throw new Error("利用者DBシートが見つかりません。"); // エラーをスローしてクライアントに伝える
      }
 
-     const data = userSheet.getDataRange().getValues();
     // ヘッダー: A:利用者ID, B:氏名, C:メールアドレス
-    const userIdColIndex = 0; // A列
-    const nameColIndex = 1;   // B列
-    const emailColIndex = 2;  // C列
-
-    // ヘッダー行を除く (1行目から検索)
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      // 利用者IDが一致するか確認（大文字小文字を無視）
-      if (row[userIdColIndex] && row[userIdColIndex].toString().trim().toLowerCase() === userId.trim().toLowerCase()) {
-        const userName = row[nameColIndex] || "氏名不明";
-        const userEmail = row[emailColIndex] || null; // メールアドレスがない場合はnull
-        console.log(`利用者情報取得成功: ${userName}, Email: ${userEmail}`);
-        return { name: userName, email: userEmail };
-      }
+    // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
+    const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
+    if (rowNumber !== -1) {
+      const row = userSheet.getRange(rowNumber, 1, 1, 3).getValues()[0];
+      const userName = row[1] || "氏名不明";
+      const userEmail = row[2] || null; // メールアドレスがない場合はnull
+      console.log(`利用者情報取得成功: ${userName}, Email: ${userEmail}`);
+      return { name: userName, email: userEmail };
     }
     console.warn(`利用者ID ${userId} の情報が見つかりませんでした。`);
     return null; // 見つからなかった場合
@@ -393,11 +449,12 @@ function processLendingForm_(formData) {
 
     // 貸出記録側にも未返却レコードがないか確認する
     // (過去データで書籍DBの状態が「在庫」のまま貸出中の本による二重貸出を防ぐ)
-    const lendingData = lendingSheet.getDataRange().getValues();
+    // TextFinderで該当書籍IDの行だけを取得し、全行読み込みを避ける
     const targetBookId = formData.bookId.toString().trim();
-    for (let i = 1; i < lendingData.length; i++) {
-      const rowBookId = lendingData[i][0] ? lendingData[i][0].toString().trim() : "";
-      if (rowBookId === targetBookId && lendingData[i][6] === "未返却") {
+    const loanRowNumbers = findRowsByValue_(lendingSheet, 1, targetBookId);
+    for (const rowNumber of loanRowNumbers) {
+      const loanStatus = lendingSheet.getRange(rowNumber, 7).getValue();
+      if (loanStatus === "未返却") {
         throw new Error("この書籍には未返却の貸出記録があります。先に返却処理を行ってください。");
       }
     }
@@ -1841,28 +1898,21 @@ function updateBookStatus(bookId, status) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
-    const data = bookSheet.getDataRange().getValues();
-    
     // 新しいデータ構造のチェック
-    if (data.length > 0 && data[0][0] === "管理番号") {
-      const managementNumColIndex = 0; // A列
-      const statusColIndex = 6;        // G列
-      
-      for (let i = 1; i < data.length; i++) {
-        const managementNum = data[i][managementNumColIndex];
-        if (managementNum && managementNum.toString().trim() === bookId.trim()) {
-          // 状態を更新
-          bookSheet.getRange(i + 1, statusColIndex + 1).setValue(status);
-          console.log(`書籍状態更新: ${bookId} → ${status}`);
-          return;
-        }
+    if (isNewBookLayout_(bookSheet)) {
+      // TextFinderで管理番号(A列)の行を特定し、G列(状態)のみ更新する
+      const rowNumber = findRowByValue_(bookSheet, 1, bookId);
+      if (rowNumber !== -1) {
+        bookSheet.getRange(rowNumber, 7).setValue(status);
+        console.log(`書籍状態更新: ${bookId} → ${status}`);
+        return;
       }
     } else {
       // 旧構造の場合は何もしない（状態管理カラムがないため）
       console.log("旧構造のデータベースのため、状態更新をスキップします。");
       return;
     }
-    
+
     console.warn(`書籍ID ${bookId} が見つかりませんでした。`);
   } catch (error) {
     console.error(`書籍状態の更新中にエラーが発生しました: ${error}`);
@@ -1891,61 +1941,30 @@ function getUserDetails(userId) {
       return null;
     }
     
-    const data = userSheet.getDataRange().getValues();
-    const userIdColIndex = 0; // A列
-    const nameColIndex = 1; // B列
-    const emailColIndex = 2; // C列
-    
-    console.log(`getUserDetails: データ行数: ${data.length}`);
-    
-    // ヘッダー行の内容をログ出力
-    if (data.length > 0) {
-      console.log(`getUserDetails: ヘッダー行: ${JSON.stringify(data[0])}`);
+    // ヘッダー: A:利用者ID, B:氏名, C:メール, D:電話番号, E:住所, F:登録日
+    // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
+    const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
+    if (rowNumber !== -1) {
+      const row = userSheet.getRange(rowNumber, 1, 1, 6).getValues()[0];
+      const rowUserId = row[0] ? row[0].toString().trim() : "";
+
+      // 日付を文字列に変換して返す
+      const registrationDate = row[5] || null;
+      const lastUseDate = getLastUseDate(userId);
+
+      const userDetails = {
+        userId: rowUserId,
+        name: row[1] || "",
+        email: row[2] || "",
+        phone: row[3] || "",
+        address: row[4] || "",
+        registrationDate: registrationDate instanceof Date ? registrationDate.toISOString() : (registrationDate || new Date().toISOString()),
+        lastUseDate: lastUseDate instanceof Date ? lastUseDate.toISOString() : null
+      };
+      console.log(`getUserDetails: 利用者情報取得成功:`, userDetails);
+      return userDetails;
     }
-    
-    // ヘッダー行を除いて検索
-    for (let i = 1; i < data.length; i++) {
-      // 空の行をスキップ
-      if (!data[i] || data[i].length === 0 || !data[i][userIdColIndex]) {
-        continue;
-      }
-      
-      const rowUserId = data[i][userIdColIndex].toString().trim();
-      // デバッグ用: 最初の数行の利用者IDを表示
-      if (i <= 3) {
-        console.log(`getUserDetails: 行${i + 1} - DB内のID: "${rowUserId}" (長さ:${rowUserId.length}), 検索ID: "${userId.trim()}" (長さ:${userId.trim().length})`);
-      }
-      
-      // IDが完全一致するかチェック（大文字小文字を無視）
-      if (rowUserId.toLowerCase() === userId.trim().toLowerCase()) {
-        // 追加のカラムがある場合の取得
-        const phoneColIndex = 3; // D列（電話番号）
-        const addressColIndex = 4; // E列（住所）
-        const registrationDateColIndex = 5; // F列（登録日）
-        
-        // カラム数をチェックして安全にアクセス
-        const rowLength = data[i].length;
-        console.log(`getUserDetails: 行${i + 1}のカラム数: ${rowLength}`);
-        
-        // 日付を文字列に変換して返す
-        const registrationDate = rowLength > registrationDateColIndex ? data[i][registrationDateColIndex] : null;
-        const lastUseDate = getLastUseDate(userId);
-        
-        const userDetails = {
-          userId: rowUserId,
-          name: data[i][nameColIndex] || "",
-          email: data[i][emailColIndex] || "",
-          phone: rowLength > phoneColIndex ? (data[i][phoneColIndex] || "") : "",
-          address: rowLength > addressColIndex ? (data[i][addressColIndex] || "") : "",
-          registrationDate: registrationDate instanceof Date ? registrationDate.toISOString() : (registrationDate || new Date().toISOString()),
-          lastUseDate: lastUseDate instanceof Date ? lastUseDate.toISOString() : null
-        };
-        console.log(`getUserDetails: 利用者情報取得成功:`, userDetails);
-        console.log(`getUserDetails: 返却するデータのJSON:`, JSON.stringify(userDetails));
-        return userDetails;
-      }
-    }
-    
+
     console.log(`getUserDetails: 利用者ID ${userId} の情報が見つかりませんでした。`);
     return null;
   } catch (error) {
@@ -2937,10 +2956,12 @@ function getOverdueList() {
       throw new Error("貸出記録シートが見つかりません。");
     }
     
-    const data = lendingSheet.getDataRange().getValues();
+    // 必要なA〜G列のみ読み込む(H列以降の返却日時・最終通知日は延滞判定に不要)
+    const lendingLastRow = lendingSheet.getLastRow();
+    const data = lendingLastRow > 0 ? lendingSheet.getRange(1, 1, lendingLastRow, 7).getValues() : [];
     const today = new Date();
     today.setHours(0, 0, 0, 0); // 時刻部分をリセット
-    
+
     // ヘッダー: A:書籍ID, B:書籍名, C:利用者ID, D:利用者名, E:貸出日時, F:返却予定日, G:返却状況
     const bookIdColIndex = 0;     // A列
     const titleColIndex = 1;      // B列
@@ -3117,10 +3138,12 @@ function getLibraryStatistics() {
       throw new Error("貸出記録シートが見つかりません。");
     }
     
-    const data = lendingSheet.getDataRange().getValues();
+    // 必要なA〜G列のみ読み込む(H列以降は統計に不要)
+    const lendingLastRow = lendingSheet.getLastRow();
+    const data = lendingLastRow > 0 ? lendingSheet.getRange(1, 1, lendingLastRow, 7).getValues() : [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     // ヘッダー: A:書籍ID, B:書籍名, C:利用者ID, D:利用者名, E:貸出日時, F:返却予定日, G:返却状況
     const bookIdColIndex = 0;
     const titleColIndex = 1;
@@ -3129,7 +3152,7 @@ function getLibraryStatistics() {
     const lendingDateColIndex = 4;
     const dueDateColIndex = 5;
     const statusColIndex = 6;
-    
+
     const records = [];
     
     // ヘッダー行を除く
