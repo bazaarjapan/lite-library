@@ -1928,11 +1928,27 @@ function backupReturnedData(targetSpreadsheetId) {
       return { success: true, count: 0, message: "バックアップ対象の返却済データがありません。" };
     }
     
-    // バックアップ先のシートにヘッダーがなければ追加
+    // バックアップ先のヘッダーを確認する(既存のバックアップデータは決して消さない)
     const targetData = targetSheet.getDataRange().getValues();
-    if (targetData.length === 0 || targetData[0].join() !== headers.join()) {
-      targetSheet.clearContents(); // 既存のデータをクリア
-      targetSheet.appendRow(headers); // ヘッダー行を追加
+    const targetIsEmpty = targetData.length === 0 ||
+      (targetData.length === 1 && targetData[0].every(cell => cell === ""));
+    if (targetIsEmpty) {
+      targetSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    } else {
+      const targetHeaders = targetData[0].filter(cell => cell !== "");
+      const overlap = Math.min(targetHeaders.length, headers.length);
+      const isCompatible = targetHeaders.slice(0, overlap).join("\t") === headers.slice(0, overlap).join("\t");
+      if (!isCompatible) {
+        return {
+          success: false,
+          count: 0,
+          message: "バックアップ先のヘッダーが貸出記録と一致しません。既存データ保護のため処理を中止しました。"
+        };
+      }
+      // 元シートに列が追加された場合(例: 最終通知日)はヘッダー行だけ拡張する
+      if (headers.length > targetHeaders.length) {
+        targetSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      }
     }
     
     // 返却済みデータをバックアップ先に追加
@@ -2587,10 +2603,11 @@ function sendOverdueNotifications() {
     }
 
     // 利用者ID → メールアドレスの対応表を作成（利用者DB: A列=ID, C列=メール）
+    // 貸出記録側のIDは大文字小文字が揺れることがある(getUserInfo が大文字小文字を無視して照合するため)ので小文字キーで持つ
     const userData = userSheet.getDataRange().getValues();
     const emailByUserId = {};
     for (let i = 1; i < userData.length; i++) {
-      const userId = userData[i][0] ? userData[i][0].toString().trim() : "";
+      const userId = userData[i][0] ? userData[i][0].toString().trim().toLowerCase() : "";
       const email = userData[i][2] ? userData[i][2].toString().trim() : "";
       if (userId && email) {
         emailByUserId[userId] = email;
@@ -2638,7 +2655,7 @@ function sendOverdueNotifications() {
       }
 
       const userId = row[2] ? row[2].toString().trim() : "";
-      const email = emailByUserId[userId];
+      const email = emailByUserId[userId.toLowerCase()];
       if (!email) {
         console.log(`利用者 ${userId} のメールアドレスが未登録のため通知をスキップします。`);
         skipped++;
