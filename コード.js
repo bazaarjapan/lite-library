@@ -3628,6 +3628,7 @@ function installArchiveTriggerFromMenu() {
   const prompt = ui.prompt(
     '月次アーカイブトリガー設置',
     'バックアップ先のスプレッドシートIDを入力してください。\n' +
+    '(疎通確認のため、設置時に初回バックアップを1回実行します)\n' +
     (current
       ? `現在の設定: ${current}\n(空のままOKを押すと現在の設定を使用します)`
       : '(例: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms)'),
@@ -3642,24 +3643,28 @@ function installArchiveTriggerFromMenu() {
     return;
   }
 
-  // 接続確認(開けないIDを保存してトリガーが空振りし続けるのを防ぐ)
-  try {
-    SpreadsheetApp.openById(targetId);
-  } catch (error) {
-    ui.alert('エラー', `バックアップ先のスプレッドシートを開けません: ${error.message}`, ui.ButtonSet.OK);
+  // 疎通確認を兼ねて実際にバックアップを1回実行する。
+  // openByIdだけでは「開けるが書き込めない」「バックアップシートのヘッダーが
+  // 不適合」を検出できず、毎月空振りするトリガーが設置されてしまうため、
+  // 本番と同じ経路(権限・ヘッダー互換チェック込み)で検証する
+  const testRun = backupReturnedData(targetId);
+  if (!testRun.success) {
+    ui.alert('エラー', `バックアップ先の検証に失敗したため、トリガーは設置しません:\n${testRun.message}`, ui.ButtonSet.OK);
     return;
   }
 
-  if (input && input !== current) {
-    const saveResult = saveLibrarySettings({ backupSpreadsheetId: input });
-    if (!saveResult.success) {
-      ui.alert('エラー', `バックアップ先の保存に失敗しました: ${saveResult.message}`, ui.ButtonSet.OK);
-      return;
-    }
+  const saveResult = saveLibrarySettings({ backupSpreadsheetId: targetId });
+  if (!saveResult.success) {
+    ui.alert('エラー', `バックアップ先の保存に失敗しました: ${saveResult.message}`, ui.ButtonSet.OK);
+    return;
   }
 
   const result = installArchiveTrigger();
-  ui.alert(result.success ? '月次アーカイブトリガー設置' : '設置失敗', result.message, ui.ButtonSet.OK);
+  ui.alert(
+    result.success ? '月次アーカイブトリガー設置' : '設置失敗',
+    `${result.message}\n(疎通確認として初回バックアップを実行しました: ${testRun.message})`,
+    ui.ButtonSet.OK
+  );
 }
 
 /**
