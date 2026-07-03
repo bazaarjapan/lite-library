@@ -375,25 +375,26 @@ function getAvailableBook(isbn) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
-    // 新しいデータ構造のチェック
-    if (isNewBookLayout_(bookSheet)) {
-      // ISBN(B列)を正規化して一致する行だけを取得し、その中から在庫のある本を探す
-      const rowNumbers = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedIsbn);
-      for (const rowNumber of rowNumbers) {
-        const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
-        const status = row[6] || "在庫";
-        if (status === "在庫") {
-          const managementNum = row[0] || "";
-          const storedIsbn = row[1] ? row[1].toString().trim() : normalizedIsbn;
-          const bookTitle = row[2] || "タイトル不明";
-          console.log(`利用可能な書籍発見: ${bookTitle} (管理番号: ${managementNum})`);
-          return {
-            title: bookTitle,
-            managementNumber: managementNum,
-            isbn: normalizeIsbn_(storedIsbn) || storedIsbn,
-            status: status
-          };
-        }
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
+    // ISBN(B列)を正規化して一致する行だけを取得し、その中から在庫のある本を探す
+    const rowNumbers = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedIsbn);
+    for (const rowNumber of rowNumbers) {
+      const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
+      const status = row[6] || "在庫";
+      if (status === "在庫") {
+        const managementNum = row[0] || "";
+        const storedIsbn = row[1] ? row[1].toString().trim() : normalizedIsbn;
+        const bookTitle = row[2] || "タイトル不明";
+        console.log(`利用可能な書籍発見: ${bookTitle} (管理番号: ${managementNum})`);
+        return {
+          title: bookTitle,
+          managementNumber: managementNum,
+          isbn: normalizeIsbn_(storedIsbn) || storedIsbn,
+          status: status
+        };
       }
     }
 
@@ -425,48 +426,30 @@ function getBookDetails(bookId) {
       throw new Error("書籍DBシートが見つかりません。");
     }
 
-    // 新しいデータ構造のチェック（管理番号がある場合）
-    if (isNewBookLayout_(bookSheet)) {
-      // 新構造: A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
-      // TextFinderで管理番号(A列)→ISBN(B列)の順に検索し、全行読み込みを避ける
-      let rowNumber = findRowByValue_(bookSheet, 1, bookId);
-      if (rowNumber === -1 && normalizedInputIsbn) {
-        const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedInputIsbn);
-        rowNumber = isbnRows.length > 0 ? isbnRows[0] : -1;
-      }
-      if (rowNumber !== -1) {
-        const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
-        const managementNum = row[0] ? row[0].toString().trim() : "";
-        const isbn = row[1] ? row[1].toString().trim() : "";
-        const bookTitle = row[2] || "タイトル不明";
-        const status = row[6] || "在庫";
-        console.log(`書籍情報取得成功: ${bookTitle} (管理番号: ${managementNum}, 状態: ${status})`);
-        return {
-          title: bookTitle,
-          managementNumber: managementNum,
-          isbn: isbn,
-          status: status
-        };
-      }
-    } else {
-      // 旧構造: A:書籍ID(ISBN), B:書籍名
-      let rowNumber = findRowByValue_(bookSheet, 1, bookId);
-      if (rowNumber === -1 && normalizedInputIsbn) {
-        const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 1, normalizedInputIsbn);
-        rowNumber = isbnRows.length > 0 ? isbnRows[0] : -1;
-      }
-      if (rowNumber !== -1) {
-        const row = bookSheet.getRange(rowNumber, 1, 1, 2).getValues()[0];
-        const storedBookId = row[0] ? row[0].toString().trim() : bookId;
-        const bookTitle = row[1] || "タイトル不明";
-        console.log(`書籍情報取得成功: ${bookTitle}`);
-        return {
-          title: bookTitle,
-          managementNumber: storedBookId,
-          isbn: storedBookId,
-          status: "在庫"
-        };
-      }
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
+    // A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
+    // TextFinderで管理番号(A列)→ISBN(B列)の順に検索し、全行読み込みを避ける
+    let rowNumber = findRowByValue_(bookSheet, 1, bookId);
+    if (rowNumber === -1 && normalizedInputIsbn) {
+      const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedInputIsbn);
+      rowNumber = isbnRows.length > 0 ? isbnRows[0] : -1;
+    }
+    if (rowNumber !== -1) {
+      const row = bookSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
+      const managementNum = row[0] ? row[0].toString().trim() : "";
+      const isbn = row[1] ? row[1].toString().trim() : "";
+      const bookTitle = row[2] || "タイトル不明";
+      const status = row[6] || "在庫";
+      console.log(`書籍情報取得成功: ${bookTitle} (管理番号: ${managementNum}, 状態: ${status})`);
+      return {
+        title: bookTitle,
+        managementNumber: managementNum,
+        isbn: isbn,
+        status: status
+      };
     }
 
     console.warn(`書籍ID ${bookId} の情報が見つかりませんでした。`);
@@ -1109,31 +1092,27 @@ function processBulkLending_(bulkData) {
       throw new Error("必要なシートが見つかりません。");
     }
 
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
     // 書籍DBの情報を先に読み込んでおく（効率化のため）
-    // 新レイアウト: A=管理番号, B=ISBN, C=書籍名, G=状態 / 旧レイアウト: A=書籍ID, B=書籍名
+    // A=管理番号, B=ISBN, C=書籍名, G=状態
     const bookData = bookSheet.getDataRange().getValues();
-    const isNewLayout = bookData.length > 0 && bookData[0][0] === "管理番号";
-    const titleColIndex = isNewLayout ? 2 : 1;
     const bookMap = new Map(); // 管理番号をキー、{title, status, rowNumber} を値とするMap
     const copiesByIsbn = new Map(); // ISBNをキー、同一ISBNの蔵書 [{managementNumber, entry}] を値とするMap
     for (let i = 1; i < bookData.length; i++) {
       const bookId = bookData[i][0] ? bookData[i][0].toString().trim() : null;
       if (bookId) {
         const entry = {
-          title: bookData[i][titleColIndex] || "タイトル不明",
-          status: isNewLayout ? (bookData[i][6] || "在庫") : "在庫",
+          title: bookData[i][2] || "タイトル不明",
+          status: bookData[i][6] || "在庫",
           rowNumber: i + 1,
           bookId: bookId
         };
         bookMap.set(bookId, entry);
-        if (!isNewLayout) {
-          const normalizedBookId = isValidIsbn_(bookId) ? normalizeIsbn_(bookId) : "";
-          if (normalizedBookId && normalizedBookId !== bookId) {
-            bookMap.set(normalizedBookId, entry);
-          }
-        }
-        // 新レイアウトではISBN(B列)でも検索できるようにする(getBookDetails と同じ挙動)
-        if (isNewLayout && bookData[i][1]) {
+        // ISBN(B列)でも検索できるようにする(getBookDetails と同じ挙動)
+        if (bookData[i][1]) {
           const isbn = normalizeIsbn_(bookData[i][1]);
           if (isbn) {
             if (!copiesByIsbn.has(isbn)) {
@@ -1234,9 +1213,7 @@ function processBulkLending_(bulkData) {
         dueDate,
         returnStatus
       ]);
-      if (isNewLayout) {
-        rowsToMarkLent.push(book.rowNumber);
-      }
+      rowsToMarkLent.push(book.rowNumber);
       successCount++;
       console.log(`貸出準備完了: ${book.title} (ID: ${lendId})`);
     });
@@ -1646,18 +1623,15 @@ function updateBookStatus(bookId, status) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
-    // 新しいデータ構造のチェック
-    if (isNewBookLayout_(bookSheet)) {
-      // TextFinderで管理番号(A列)の行を特定し、G列(状態)のみ更新する
-      const rowNumber = findRowByValue_(bookSheet, 1, bookId);
-      if (rowNumber !== -1) {
-        bookSheet.getRange(rowNumber, 7).setValue(status);
-        console.log(`書籍状態更新: ${bookId} → ${status}`);
-        return;
-      }
-    } else {
-      // 旧構造の場合は何もしない（状態管理カラムがないため）
-      console.log("旧構造のデータベースのため、状態更新をスキップします。");
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
+    // TextFinderで管理番号(A列)の行を特定し、G列(状態)のみ更新する
+    const rowNumber = findRowByValue_(bookSheet, 1, bookId);
+    if (rowNumber !== -1) {
+      bookSheet.getRange(rowNumber, 7).setValue(status);
+      console.log(`書籍状態更新: ${bookId} → ${status}`);
       return;
     }
 
@@ -4027,8 +4001,11 @@ function getBookInventory() {
     const lendingData = lendingSheet ? lendingSheet.getDataRange().getValues() : [];
     
     // ヘッダー行をチェックして新旧構造を判定
-    const isNewStructure = bookData.length > 0 && bookData[0][0] === "管理番号";
-    
+    if (!(bookData.length > 0 && bookData[0][0] === "管理番号")) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
+
     // 管理番号/書籍IDをキーとして、現在の貸出状況を格納するMap
     const lendingMap = new Map();
     
@@ -4050,60 +4027,32 @@ function getBookInventory() {
     // 書籍在庫情報を作成
     const inventory = [];
     
-    if (isNewStructure) {
-      // 新構造: A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
-      for (let i = 1; i < bookData.length; i++) {
-        const managementNumber = bookData[i][0]; // A列: 管理番号
-        const isbn = bookData[i][1];             // B列: ISBN
-        const title = bookData[i][2];            // C列: 書籍名
-        const author = bookData[i][3] || "";     // D列: 著者名
-        const publisher = bookData[i][4] || "";  // E列: 出版社
-        const dbStatus = bookData[i][6] || "在庫"; // G列: 状態
-        
-        if (!managementNumber) continue; // 管理番号がない行はスキップ
-        
-        const lendingInfo = lendingMap.get(managementNumber);
-        
-        inventory.push({
-          managementNumber: managementNumber,
-          isbn: isbn || "",
-          bookId: managementNumber, // 互換性のため
-          title: title || "タイトル不明",
-          author: author,
-          publisher: publisher,
-          status: dbStatus === "廃棄" ? "廃棄" : (dbStatus === "貸出中" || lendingInfo ? "貸出中" : "在庫"),
-          borrowerName: lendingInfo ? lendingInfo.borrowerName : null,
-          borrowerId: lendingInfo ? lendingInfo.borrowerId : null,
-          lendingDate: lendingInfo ? lendingInfo.lendingDate : null,
-          dueDate: lendingInfo ? lendingInfo.dueDate : null
-        });
-      }
-    } else {
-      // 旧構造: A:書籍ID(ISBN), B:書籍名, C:著者名, D:出版社
-      for (let i = 1; i < bookData.length; i++) {
-        const bookId = bookData[i][0];           // A列: 書籍ID
-        const title = bookData[i][1];            // B列: 書籍名
-        const author = bookData[i][2] || "";     // C列: 著者名
-        const publisher = bookData[i][3] || "";  // D列: 出版社
-        
-        if (!bookId) continue; // 書籍IDがない行はスキップ
-        
-        const lendingInfo = lendingMap.get(bookId);
-        
-        inventory.push({
-          managementNumber: bookId,
-          isbn: bookId,
-          bookId: bookId,
-          title: title || "タイトル不明",
-          author: author,
-          publisher: publisher,
-          status: lendingInfo ? 'borrowed' : 'available',
-          borrowerName: lendingInfo ? lendingInfo.borrowerName : null,
-          borrowerId: lendingInfo ? lendingInfo.borrowerId : null,
-          lendingDate: lendingInfo ? lendingInfo.lendingDate : null,
-          dueDate: lendingInfo ? lendingInfo.dueDate : null
-        });
-      }
+    // A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
+    for (let i = 1; i < bookData.length; i++) {
+      const managementNumber = bookData[i][0]; // A列: 管理番号
+      const isbn = bookData[i][1];             // B列: ISBN
+      const title = bookData[i][2];            // C列: 書籍名
+      const author = bookData[i][3] || "";     // D列: 著者名
+      const publisher = bookData[i][4] || "";  // E列: 出版社
+      const dbStatus = bookData[i][6] || "在庫"; // G列: 状態
+
+      if (!managementNumber) continue; // 管理番号がない行はスキップ
+
+      const lendingInfo = lendingMap.get(managementNumber);
+
+      inventory.push({
+        managementNumber: managementNumber,
+        isbn: isbn || "",
+        bookId: managementNumber, // 互換性のため
+        title: title || "タイトル不明",
+        author: author,
+        publisher: publisher,
+        status: dbStatus === "廃棄" ? "廃棄" : (dbStatus === "貸出中" || lendingInfo ? "貸出中" : "在庫"),
+        borrowerName: lendingInfo ? lendingInfo.borrowerName : null,
+        borrowerId: lendingInfo ? lendingInfo.borrowerId : null,
+        lendingDate: lendingInfo ? lendingInfo.lendingDate : null,
+        dueDate: lendingInfo ? lendingInfo.dueDate : null
+      });
     }
     
     // 管理番号でソート
@@ -4143,6 +4092,10 @@ function getBookFullDetails(bookId) {
       return null;
     }
     
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
     const bookData = bookSheet.getDataRange().getValues();
     const bookIdColIndex = 0; // A列
     
@@ -4150,11 +4103,9 @@ function getBookFullDetails(bookId) {
     for (let i = 1; i < bookData.length; i++) {
       const rowBookId = bookData[i][bookIdColIndex] ? bookData[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookId.trim().toLowerCase()) {
-        // 基本情報(レイアウトに応じて列をマッピングする)
-        const isNew = isNewBookLayout_(bookSheet);
+        // 基本情報(新レイアウト: A=管理番号, B=ISBN, C=書籍名, D=著者名, E=出版社, F=備考, G=状態)
         const col = SCHEMA["書籍DB"].col;
-        const bookInfo = isNew ? {
-          // 新レイアウト: A=管理番号, B=ISBN, C=書籍名, D=著者名, E=出版社, F=備考, G=状態
+        const bookInfo = {
           bookId: rowBookId,
           title: bookData[i][col.書籍名] || "",
           author: bookData[i][col.著者名] || "",
@@ -4165,19 +4116,6 @@ function getBookFullDetails(bookId) {
           registrationDate: null,
           isAvailable: true,
           status: (bookData[i][col.状態] || "").toString().trim(),
-          lastLendingDate: null
-        } : {
-          // 旧レイアウト: A=書籍ID, B=書籍名, C=著者名, D=出版社, E=備考, F=分類, G=配架場所, H=登録日
-          bookId: rowBookId,
-          title: bookData[i][1] || "",
-          author: bookData[i][2] || "",
-          publisher: bookData[i][3] || "",
-          note: bookData[i][4] || "",
-          category: bookData[i][5] || "",
-          location: bookData[i][6] || "",
-          registrationDate: toIsoString_(bookData[i][7] || new Date()),
-          isAvailable: true,
-          status: "",
           lastLendingDate: null
         };
 
@@ -4289,6 +4227,10 @@ function updateBookInfo_(bookData) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
     const data = bookSheet.getDataRange().getValues();
     const bookIdColIndex = 0; // A列
     
@@ -4296,32 +4238,15 @@ function updateBookInfo_(bookData) {
     for (let i = 1; i < data.length; i++) {
       const rowBookId = data[i][bookIdColIndex] ? data[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookData.bookId.trim().toLowerCase()) {
-        if (isNewBookLayout_(bookSheet)) {
-          // 新レイアウト: 書籍名(C)〜備考(F)のみ更新する。
-          // A=管理番号・B=ISBN・G=状態(在庫/貸出中/廃棄)は編集で変更しない
-          // (旧マッピングのまま書くとISBNや状態列を上書きして行が壊れる)
-          const col = SCHEMA["書籍DB"].col;
-          bookSheet.getRange(i + 1, col.書籍名 + 1, 1, 4).setValues([[
-            bookData.title || "",
-            bookData.author || "",
-            bookData.publisher || "",
-            bookData.note || ""
-          ]]);
-        } else {
-          // 旧レイアウト: A=書籍ID, B=書籍名, C=著者名, D=出版社, E=備考, F=分類, G=配架場所, H=登録日
-          const registrationDate = data[i][7] || new Date();
-          const updatedRow = [
-            rowBookId, // 書籍ID（変更不可）
-            bookData.title || "",
-            bookData.author || "",
-            bookData.publisher || "",
-            bookData.note || "",
-            bookData.category || "",
-            bookData.location || "",
-            registrationDate
-          ];
-          bookSheet.getRange(i + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
-        }
+        // 書籍名(C)〜備考(F)のみ更新する。
+        // A=管理番号・B=ISBN・G=状態(在庫/貸出中/廃棄)は編集で変更しない
+        const col = SCHEMA["書籍DB"].col;
+        bookSheet.getRange(i + 1, col.書籍名 + 1, 1, 4).setValues([[
+          bookData.title || "",
+          bookData.author || "",
+          bookData.publisher || "",
+          bookData.note || ""
+        ]]);
         console.log(`書籍情報を更新しました: ${bookData.bookId}`);
         return true;
       }
