@@ -2151,12 +2151,15 @@ function validateSchema_() {
         problems.push(`シート「${sheetName}」が空です(ヘッダーがありません)`);
         continue;
       }
-      const actual = sheet.getRange(1, 1, 1, def.headers.length).getValues()[0]
+      // グリッドが定義より狭いシートでも範囲外エラーにせず「(列なし)」として報告する
+      const width = Math.min(def.headers.length, sheet.getMaxColumns());
+      const actual = sheet.getRange(1, 1, 1, width).getValues()[0]
         .map(v => (v === undefined || v === null) ? "" : v.toString().trim());
       def.headers.forEach((expected, idx) => {
-        if (actual[idx] !== expected) {
+        const actualValue = idx < width ? actual[idx] : "(列なし)";
+        if (actualValue !== expected) {
           const colLetter = String.fromCharCode(65 + idx);
-          problems.push(`「${sheetName}」${colLetter}列: 期待「${expected}」/ 実際「${actual[idx] || "(空)"}」`);
+          problems.push(`「${sheetName}」${colLetter}列: 期待「${expected}」/ 実際「${actualValue || "(空)"}」`);
         }
       });
     }
