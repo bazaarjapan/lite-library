@@ -4380,11 +4380,19 @@ function createInventoryReport() {
     // 新しいシートを作成
     const reportSheet = ss.insertSheet(reportName);
     
-    // サマリー情報
-    const totalBooks = inventory.length;
-    const availableBooks = inventory.filter(book => book.status === 'available').length;
-    const borrowedBooks = inventory.filter(book => book.status === 'borrowed').length;
-    
+    // 状態値を正規化する(getBookInventory は日本語の状態を返す)
+    const normalizeStatus = book => {
+      if (book.status === '在庫' || book.status === 'available') return '在庫';
+      if (book.status === '廃棄' || book.status === 'discarded') return '廃棄';
+      return '貸出中';
+    };
+
+    // サマリー情報(廃棄は総蔵書数に含めず別掲する)
+    const discardedBooks = inventory.filter(book => normalizeStatus(book) === '廃棄').length;
+    const totalBooks = inventory.length - discardedBooks;
+    const availableBooks = inventory.filter(book => normalizeStatus(book) === '在庫').length;
+    const borrowedBooks = inventory.filter(book => normalizeStatus(book) === '貸出中').length;
+
     const summaryData = [
       ["書籍在庫リスト", ""],
       ["作成日時", Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss")],
@@ -4392,6 +4400,7 @@ function createInventoryReport() {
       ["総蔵書数", totalBooks + "冊"],
       ["貸出可能", availableBooks + "冊"],
       ["貸出中", borrowedBooks + "冊"],
+      ["廃棄", discardedBooks + "冊"],
       ["", ""]
     ];
     
@@ -4407,7 +4416,8 @@ function createInventoryReport() {
     // データ行を作成
     if (inventory.length > 0) {
       const dataRows = inventory.map(book => {
-        const statusText = book.status === 'available' ? '貸出可能' : '貸出中';
+        const normalized = normalizeStatus(book);
+        const statusText = normalized === '在庫' ? '貸出可能' : normalized;
         return [
           book.bookId,
           book.title,
@@ -4425,8 +4435,11 @@ function createInventoryReport() {
       // 状態に応じて行の色を設定
       for (let i = 0; i < inventory.length; i++) {
         const row = currentRow + 1 + i;
-        if (inventory[i].status === 'borrowed') {
+        const normalized = normalizeStatus(inventory[i]);
+        if (normalized === '貸出中') {
           reportSheet.getRange(row, 1, 1, headers.length).setBackground("#fff3e0"); // 貸出中はオレンジ
+        } else if (normalized === '廃棄') {
+          reportSheet.getRange(row, 1, 1, headers.length).setBackground("#eceff1"); // 廃棄はグレー
         }
       }
       
