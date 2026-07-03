@@ -2504,12 +2504,14 @@ function backupReturnedData_(targetSpreadsheetId) {
       }
     }
     
-    // 元データの全行を取得
+    // 元データの全行を取得。ヘッダー行のみでも早期リターンせず、
+    // バックアップ先の互換性・書き込み可否の検証まで進める
+    // (トリガー設置時の疎通確認が素通りしないように)
     const data = lendingSheet.getDataRange().getValues();
-    if (data.length <= 1) { // ヘッダー行のみの場合
-      return { success: true, count: 0, message: "バックアップ対象のデータがありません。" };
+    if (data.length === 0 || data[0].every(cell => cell === "")) {
+      return { success: false, count: 0, message: "貸出記録シートにヘッダーがありません。初期セットアップを実行してください。" };
     }
-    
+
     // ヘッダー行
     const headers = data[0];
 
