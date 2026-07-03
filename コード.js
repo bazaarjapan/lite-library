@@ -1,4 +1,32 @@
 /**
+ * シート構成の一元定義。
+ * シート名・ヘッダー・列インデックスはここが唯一の定義であり、
+ * setupLibrarySystem / registerBook_ / migrateBookDbLayout_ などのヘッダー生成と
+ * validateSchema_ の検証はすべてこの定数を参照する。
+ * 列の並びはコード全体でハードコードされた列インデックスと一致させる必要が
+ * あるため、列を追加する場合は必ず末尾に追加すること。
+ * (貸出記録の「最終通知日」列だけは例外的にヘッダー名でI列以降から動的に検索される)
+ */
+const SCHEMA = {
+  "書籍DB": {
+    headers: ["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"],
+    col: { 管理番号: 0, ISBN: 1, 書籍名: 2, 著者名: 3, 出版社: 4, 備考: 5, 状態: 6 }
+  },
+  "利用者DB": {
+    headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日"],
+    col: { 利用者ID: 0, 氏名: 1, メールアドレス: 2, 電話番号: 3, 住所: 4, 登録日: 5 }
+  },
+  "貸出記録": {
+    headers: ["書籍ID", "書籍名", "利用者ID", "利用者名", "貸出日時", "返却予定日", "返却状況", "返却日時"],
+    col: { 書籍ID: 0, 書籍名: 1, 利用者ID: 2, 利用者名: 3, 貸出日時: 4, 返却予定日: 5, 返却状況: 6, 返却日時: 7 }
+  },
+  "設定DB": {
+    headers: ["設定項目", "設定値", "説明", "更新日時"],
+    col: { 設定項目: 0, 設定値: 1, 説明: 2, 更新日時: 3 }
+  }
+};
+
+/**
  * WebアプリケーションとしてアクセスされたときにHTMLを表示する関数
  * @param {Object} e - イベントオブジェクト
  * @return {HtmlOutput} HTMLサービスのアウトプット
@@ -1903,7 +1931,7 @@ function registerBook_(bookData) {
     if (!range || bookSheet.getLastRow() === 0) {
       console.log("書籍DBが空です。ヘッダー行を追加します。");
       // 新しいヘッダー行を追加（管理番号カラムを含む）
-      bookSheet.getRange(1, 1, 1, 7).setValues([["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"]]);
+      bookSheet.getRange(1, 1, 1, SCHEMA["書籍DB"].headers.length).setValues([SCHEMA["書籍DB"].headers]);
     } else if (!isNewBookLayout_(bookSheet)) {
       // 旧レイアウトのシートに新形式の行を追記すると列がずれて混在し、
       // 書籍IDが正しく認識されなくなるため、先に移行を促す
@@ -2359,6 +2387,7 @@ function onOpen() {
       .createMenu('管理メニュー')
       .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
       .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
+      .addItem('スキーマ検証', 'validateSchemaFromMenu')
       .addItem('バーコード生成', 'generateBarcodesForSheet')
       .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
       .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
@@ -2375,22 +2404,11 @@ function onOpen() {
  * @return {object} 処理結果 {success: boolean, message: string, created: string[], skipped: string[]}
  */
 function setupLibrarySystem() {
-  // 各シートのヘッダー定義。列の並びはコード全体でハードコードされた
-  // 列インデックスと一致させる必要がある(特に書籍DBのA1は「管理番号」必須)。
-  const sheetDefinitions = [
-    {
-      name: "書籍DB",
-      headers: ["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"]
-    },
-    {
-      name: "利用者DB",
-      headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日"]
-    },
-    {
-      name: "貸出記録",
-      headers: ["書籍ID", "書籍名", "利用者ID", "利用者名", "貸出日時", "返却予定日", "返却状況", "返却日時"]
-    }
-  ];
+  // ヘッダー定義はSCHEMAが唯一の定義(設定DBは ensureSettingsSheet_ が担当)
+  const sheetDefinitions = ["書籍DB", "利用者DB", "貸出記録"].map(name => ({
+    name: name,
+    headers: SCHEMA[name].headers
+  }));
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2450,6 +2468,64 @@ function setupLibrarySystemFromMenu() {
     result.message,
     SpreadsheetApp.getUi().ButtonSet.OK
   );
+}
+
+/**
+ * 管理メニューからスキーマ検証を実行する関数
+ */
+function validateSchemaFromMenu() {
+  const result = validateSchema_();
+  SpreadsheetApp.getUi().alert(
+    result.success ? 'スキーマ検証: 問題なし' : 'スキーマ検証: ずれを検出',
+    result.message,
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+/**
+ * 各シートの実ヘッダーをSCHEMAの定義と突き合わせて検証する関数
+ * 列のずれ・欠落・シート不在を検出する(読み取りのみで何も変更しない)。
+ * @return {object} 検証結果 {success: boolean, message: string, problems: string[]}
+ */
+function validateSchema_() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const problems = [];
+
+    for (const [sheetName, def] of Object.entries(SCHEMA)) {
+      const sheet = ss.getSheetByName(sheetName);
+      if (!sheet) {
+        problems.push(`シート「${sheetName}」が存在しません(初期セットアップ未実行の可能性)`);
+        continue;
+      }
+      if (sheet.getLastRow() === 0) {
+        problems.push(`シート「${sheetName}」が空です(ヘッダーがありません)`);
+        continue;
+      }
+      const actual = sheet.getRange(1, 1, 1, def.headers.length).getValues()[0]
+        .map(v => (v === undefined || v === null) ? "" : v.toString().trim());
+      def.headers.forEach((expected, idx) => {
+        if (actual[idx] !== expected) {
+          const colLetter = String.fromCharCode(65 + idx);
+          problems.push(`「${sheetName}」${colLetter}列: 期待「${expected}」/ 実際「${actual[idx] || "(空)"}」`);
+        }
+      });
+    }
+
+    if (problems.length === 0) {
+      return { success: true, message: "全シートのヘッダーはSCHEMA定義と一致しています。", problems: [] };
+    }
+    return {
+      success: false,
+      message: "スキーマのずれを検出しました。列の並びが定義と異なるとデータが誤読されます:\n\n" +
+        problems.join("\n") +
+        "\n\n書籍DBが旧レイアウトの場合は「書籍DBを新レイアウトへ移行」を実行してください。",
+      problems: problems
+    };
+  } catch (error) {
+    console.error(`スキーマ検証中にエラーが発生しました: ${error}`);
+    return { success: false, message: `スキーマ検証に失敗しました: ${error.message}`, problems: [] };
+  }
 }
 
 /**
@@ -2546,7 +2622,7 @@ function migrateBookDbLayout_() {
     }
 
     // ヘッダーと全データ行を新レイアウトで書き戻す
-    bookSheet.getRange(1, 1, 1, 7).setValues([["管理番号", "書籍ID(ISBN)", "書籍名", "著者名", "出版社", "備考", "状態"]]);
+    bookSheet.getRange(1, 1, 1, SCHEMA["書籍DB"].headers.length).setValues([SCHEMA["書籍DB"].headers]);
     bookSheet.getRange(1, 1, 1, 7).setFontWeight("bold").setBackground("#f3f3f3");
     if (newRows.length > 0) {
       bookSheet.getRange(2, 1, newRows.length, 7).setValues(newRows);
@@ -3083,12 +3159,9 @@ function ensureSettingsSheet_() {
 
   // シートが空(手動で作られた空タブを含む)ならヘッダーとデフォルト設定を投入
   if (settingsSheet.getLastRow() === 0) {
-    // ヘッダー行を設定
-    const headers = [
-      ["設定項目", "設定値", "説明", "更新日時"]
-    ];
-    settingsSheet.getRange(1, 1, 1, 4).setValues(headers);
-    settingsSheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#f3f3f3");
+    // ヘッダー行を設定(定義はSCHEMAが唯一)
+    settingsSheet.getRange(1, 1, 1, SCHEMA["設定DB"].headers.length).setValues([SCHEMA["設定DB"].headers]);
+    settingsSheet.getRange(1, 1, 1, SCHEMA["設定DB"].headers.length).setFontWeight("bold").setBackground("#f3f3f3");
 
     // デフォルト設定を追加
     const defaultSettings = [

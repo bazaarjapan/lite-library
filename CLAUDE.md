@@ -31,7 +31,7 @@ The script ID is in `.clasp.json`. Manual test helpers exist in コード.js (`t
 - `貸出記録` — lending log; columns: 書籍ID, 書籍名, 利用者ID, 利用者名, 貸出日時, 返却予定日, 返却状況 (`未返却` / returned). Returns update this sheet and flip the book's status in 書籍DB.
 - `設定DB` — key/value settings (e.g. lending period in days), read via `getLibrarySettings()`.
 
-Column positions and header names are hard-coded as array indices throughout コード.js; several functions detect old vs. new data layouts by checking whether `data[0][0] === "管理番号"`. Changing a sheet's column order breaks many functions.
+Sheet names, headers, and column indices are centrally defined in the `SCHEMA` constant at the top of コード.js — header-writing code (`setupLibrarySystem`, `registerBook_`, `migrateBookDbLayout_`, `ensureSettingsSheet_`) and the 管理メニュー "スキーマ検証" (`validateSchema_`) all reference it; new columns must be appended at the end. Legacy code still hard-codes array indices throughout, and several functions detect old vs. new data layouts by checking whether `data[0][0] === "管理番号"`. Changing a sheet's column order breaks many functions.
 
 **Conventions in コード.js:**
 - "書籍ID" (bookId) may be either a 管理番号 or an ISBN; `getBookDetails` (and bulk lending) resolve both.
