@@ -4151,8 +4151,18 @@ function getBookFullDetails(bookId) {
           location: bookData[i][6] || "",
           registrationDate: toIsoString_(bookData[i][7] || new Date()),
           isAvailable: true,
+          status: "",
           lastLendingDate: null
         };
+
+        // 論理削除(廃棄)された本は貸出可能と誤表示しない
+        if (isNewBookLayout_(bookSheet)) {
+          const bookStatus = (bookData[i][SCHEMA["書籍DB"].col.状態] || "").toString().trim();
+          bookInfo.status = bookStatus;
+          if (bookStatus === "廃棄") {
+            bookInfo.isAvailable = false;
+          }
+        }
         
         // 貸出状態と最終貸出日を確認
         if (lendingSheet) {
