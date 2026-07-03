@@ -95,6 +95,10 @@ function doGet(e) {
         page = 'book_edit';
         title = '書籍情報編集';
         break;
+      case 'labels':
+        page = 'labels';
+        title = 'バーコードラベル印刷';
+        break;
       default:
         // デフォルトはメニューページのまま
         break;
@@ -2786,6 +2790,51 @@ function generateBarcodesForSheet() {
     SpreadsheetApp.getUi().alert(`「${sheetName}」シートのバーコード生成が完了しました。`);
   } else {
     SpreadsheetApp.getUi().alert('処理対象のIDがありませんでした。');
+  }
+}
+
+/**
+ * ラベル印刷用の対象一覧を取得する関数
+ * @param {string} type - "books"(書籍・廃棄を除く) または "users"(利用者・削除済みを除く)
+ * @return {Array<{id: string, label: string}>} ラベル対象の配列
+ */
+function getLabelItems(type) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    if (type === "users") {
+      const userSheet = ss.getSheetByName("利用者DB");
+      if (!userSheet || userSheet.getLastRow() < 2) return [];
+      const col = SCHEMA["利用者DB"].col;
+      const width = Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns());
+      const data = userSheet.getRange(2, 1, userSheet.getLastRow() - 1, width).getValues();
+      return data
+        .filter(row => row[col.利用者ID] &&
+          ((row[col.状態] === undefined ? "" : row[col.状態]) || "").toString().trim() !== "削除済み")
+        .map(row => ({
+          id: row[col.利用者ID].toString().trim(),
+          label: (row[col.氏名] || "").toString()
+        }));
+    }
+
+    // 既定は書籍(廃棄を除く)
+    const bookSheet = ss.getSheetByName("書籍DB");
+    if (!bookSheet) return [];
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+    if (bookSheet.getLastRow() < 2) return [];
+    const col = SCHEMA["書籍DB"].col;
+    const data = bookSheet.getRange(2, 1, bookSheet.getLastRow() - 1, SCHEMA["書籍DB"].headers.length).getValues();
+    return data
+      .filter(row => row[col.管理番号] && (row[col.状態] || "").toString().trim() !== "廃棄")
+      .map(row => ({
+        id: row[col.管理番号].toString().trim(),
+        label: (row[col.書籍名] || "").toString()
+      }));
+  } catch (error) {
+    console.error(`ラベル対象の取得中にエラーが発生しました: ${error}`);
+    throw new Error(`ラベル対象の取得に失敗しました: ${error.message}`);
   }
 }
 
