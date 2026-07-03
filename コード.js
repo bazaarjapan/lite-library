@@ -2388,6 +2388,7 @@ function onOpen() {
       .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
       .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
       .addItem('スキーマ検証', 'validateSchemaFromMenu')
+      .addItem('状態の整合性チェック・修復', 'checkBookStatusConsistencyFromMenu')
       .addItem('バーコード生成', 'generateBarcodesForSheet')
       .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
       .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
@@ -2525,6 +2526,162 @@ function validateSchema_() {
   } catch (error) {
     console.error(`スキーマ検証中にエラーが発生しました: ${error}`);
     return { success: false, message: `スキーマ検証に失敗しました: ${error.message}`, problems: [] };
+  }
+}
+
+/**
+ * 管理メニューから状態の整合性チェック(必要なら修復)を実行する関数
+ * 真実は貸出記録側にあると定義し、書籍DB.状態のずれを検知・修復する。
+ */
+function checkBookStatusConsistencyFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const analysis = analyzeBookStatusConsistency_();
+  if (!analysis.success) {
+    ui.alert('整合性チェック失敗', analysis.message, ui.ButtonSet.OK);
+    return;
+  }
+  if (analysis.mismatches.length === 0 && analysis.orphans.length === 0 && analysis.doubleLent.length === 0) {
+    ui.alert('整合性チェック: 問題なし', analysis.message, ui.ButtonSet.OK);
+    return;
+  }
+  if (analysis.mismatches.length === 0) {
+    // 修復対象(状態のずれ)はないが、警告(孤児・二重貸出)はある
+    ui.alert('整合性チェック: 警告あり', analysis.message, ui.ButtonSet.OK);
+    return;
+  }
+  const confirm = ui.alert(
+    '整合性チェック: ずれを検出',
+    analysis.message + '\n\n書籍DBの状態列を貸出記録に合わせて修復しますか?',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (confirm !== ui.Button.OK) return;
+
+  const result = repairBookStatus();
+  ui.alert(result.success ? '修復完了' : '修復失敗', result.message, ui.ButtonSet.OK);
+}
+
+/**
+ * 書籍DB.状態と貸出記録(未返却)のずれを分析する関数(読み取りのみ)
+ * @return {object} {success, message, mismatches: [{rowNumber, managementNumber, title, actual, expected}],
+ *                   orphans: string[](書籍DBに存在しない未返却書籍ID),
+ *                   doubleLent: string[](未返却が2件以上ある書籍ID)}
+ */
+function analyzeBookStatusConsistency_() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const bookSheet = ss.getSheetByName("書籍DB");
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    if (!bookSheet || !lendingSheet) {
+      return { success: false, message: "書籍DBまたは貸出記録シートが見つかりません。", mismatches: [], orphans: [], doubleLent: [] };
+    }
+    if (!isNewBookLayout_(bookSheet)) {
+      return { success: false, message: "書籍DBが旧レイアウトです。先に「書籍DBを新レイアウトへ移行」を実行してください。", mismatches: [], orphans: [], doubleLent: [] };
+    }
+
+    // 貸出記録から未返却の書籍IDごとの件数を集計
+    const unreturnedCounts = new Map();
+    if (lendingSheet.getLastRow() > 1) {
+      const lendingData = lendingSheet.getRange(1, 1, lendingSheet.getLastRow(), SCHEMA["貸出記録"].headers.length).getValues();
+      for (let i = 1; i < lendingData.length; i++) {
+        if (lendingData[i][SCHEMA["貸出記録"].col.返却状況] === "未返却" && lendingData[i][SCHEMA["貸出記録"].col.書籍ID]) {
+          const id = lendingData[i][SCHEMA["貸出記録"].col.書籍ID].toString().trim().toLowerCase();
+          unreturnedCounts.set(id, (unreturnedCounts.get(id) || 0) + 1);
+        }
+      }
+    }
+
+    // 書籍DBの各行の状態を照合
+    const mismatches = [];
+    const knownIds = new Set();
+    if (bookSheet.getLastRow() > 1) {
+      const bookData = bookSheet.getRange(1, 1, bookSheet.getLastRow(), SCHEMA["書籍DB"].headers.length).getValues();
+      for (let i = 1; i < bookData.length; i++) {
+        const managementNumber = bookData[i][SCHEMA["書籍DB"].col.管理番号];
+        if (!managementNumber) continue;
+        const idKey = managementNumber.toString().trim().toLowerCase();
+        knownIds.add(idKey);
+        const expected = unreturnedCounts.has(idKey) ? "貸出中" : "在庫";
+        const actual = (bookData[i][SCHEMA["書籍DB"].col.状態] || "在庫").toString().trim();
+        if (actual !== expected) {
+          mismatches.push({
+            rowNumber: i + 1,
+            managementNumber: managementNumber.toString().trim(),
+            title: bookData[i][SCHEMA["書籍DB"].col.書籍名] || "",
+            actual: actual,
+            expected: expected
+          });
+        }
+      }
+    }
+
+    // 警告: 書籍DBに存在しない未返却書籍ID(孤児)と、二重貸出
+    const orphans = [];
+    const doubleLent = [];
+    for (const [id, count] of unreturnedCounts.entries()) {
+      if (!knownIds.has(id)) orphans.push(id);
+      if (count > 1) doubleLent.push(`${id}(未返却${count}件)`);
+    }
+
+    const lines = [];
+    const LIST_LIMIT = 20;
+    if (mismatches.length > 0) {
+      lines.push(`状態のずれ: ${mismatches.length}件`);
+      mismatches.slice(0, LIST_LIMIT).forEach(m =>
+        lines.push(`  ${m.managementNumber}「${m.title}」: ${m.actual} → ${m.expected}`));
+      if (mismatches.length > LIST_LIMIT) lines.push(`  …他 ${mismatches.length - LIST_LIMIT}件`);
+    }
+    if (orphans.length > 0) {
+      lines.push(`書籍DBに存在しない未返却の書籍ID(要手動確認): ${orphans.slice(0, LIST_LIMIT).join(", ")}${orphans.length > LIST_LIMIT ? " …" : ""}`);
+    }
+    if (doubleLent.length > 0) {
+      lines.push(`同じ本に未返却が複数ある(二重貸出の疑い・要手動確認): ${doubleLent.slice(0, LIST_LIMIT).join(", ")}${doubleLent.length > LIST_LIMIT ? " …" : ""}`);
+    }
+    if (lines.length === 0) {
+      lines.push("書籍DBの状態と貸出記録は一致しています。");
+    }
+
+    return { success: true, message: lines.join("\n"), mismatches: mismatches, orphans: orphans, doubleLent: doubleLent };
+  } catch (error) {
+    console.error(`整合性チェック中にエラーが発生しました: ${error}`);
+    return { success: false, message: `整合性チェックに失敗しました: ${error.message}`, mismatches: [], orphans: [], doubleLent: [] };
+  }
+}
+
+/**
+ * 書籍DB.状態のずれを貸出記録に合わせて修復する関数
+ * @return {object} 処理結果 {success: boolean, message: string, repaired: number}
+ */
+function repairBookStatus() {
+  return runWithScriptLock_(
+    () => repairBookStatus_(),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function repairBookStatus_() {
+  try {
+    // ロック取得後に再分析する(確認ダイアログ表示中の変化に備える)
+    const analysis = analyzeBookStatusConsistency_();
+    if (!analysis.success) {
+      return { success: false, message: analysis.message, repaired: 0 };
+    }
+    if (analysis.mismatches.length === 0) {
+      return { success: true, message: "修復対象のずれはありませんでした。", repaired: 0 };
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const bookSheet = ss.getSheetByName("書籍DB");
+    const statusColNumber = SCHEMA["書籍DB"].col.状態 + 1;
+    analysis.mismatches.forEach(m => {
+      bookSheet.getRange(m.rowNumber, statusColNumber).setValue(m.expected);
+    });
+
+    const message = `書籍DBの状態を${analysis.mismatches.length}件修復しました(貸出記録の未返却に合わせて更新)。`;
+    console.log(message);
+    return { success: true, message: message, repaired: analysis.mismatches.length };
+  } catch (error) {
+    console.error(`状態の修復中にエラーが発生しました: ${error}`);
+    return { success: false, message: `状態の修復に失敗しました: ${error.message}`, repaired: 0 };
   }
 }
 
