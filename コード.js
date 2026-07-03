@@ -2013,6 +2013,8 @@ function onOpen() {
       .addItem('延滞通知トリガー解除', 'removeOverdueTriggerFromMenu')
       .addItem('貸出状況レポート作成', 'generateLendingReport')
       .addItem('返却済データのバックアップ', 'showBackupDialog')
+      .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
+      .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu')
       .addToUi();
 }
 
@@ -2502,12 +2504,14 @@ function backupReturnedData_(targetSpreadsheetId) {
       }
     }
     
-    // 元データの全行を取得
+    // 元データの全行を取得。ヘッダー行のみでも早期リターンせず、
+    // バックアップ先の互換性・書き込み可否の検証まで進める
+    // (トリガー設置時の疎通確認が素通りしないように)
     const data = lendingSheet.getDataRange().getValues();
-    if (data.length <= 1) { // ヘッダー行のみの場合
-      return { success: true, count: 0, message: "バックアップ対象のデータがありません。" };
+    if (data.length === 0 || data[0].every(cell => cell === "")) {
+      return { success: false, count: 0, message: "貸出記録シートにヘッダーがありません。初期セットアップを実行してください。" };
     }
-    
+
     // ヘッダー行
     const headers = data[0];
 
@@ -2525,16 +2529,9 @@ function backupReturnedData_(targetSpreadsheetId) {
       return { success: false, count: 0, message: "返却状況の列が見つかりません。" };
     }
     
-    // 返却済みデータを抽出
-    const returnedData = data.filter((row, index) => 
-      index > 0 && row[statusColIndex] === "返却済"
-    );
-    
-    if (returnedData.length === 0) {
-      return { success: true, count: 0, message: "バックアップ対象の返却済データがありません。" };
-    }
-    
-    // バックアップ先のヘッダーを確認する(既存のバックアップデータは決して消さない)
+    // バックアップ先のヘッダーを確認する(既存のバックアップデータは決して消さない)。
+    // 対象0件でも先に互換性・書き込み可否を検証することで、トリガー設置時の
+    // 疎通確認としても機能させる(0件成功で検証をスキップしない)
     const targetData = targetSheet.getDataRange().getValues();
     const targetIsEmpty = targetData.length === 0 ||
       (targetData.length === 1 && targetData[0].every(cell => cell === ""));
@@ -2591,11 +2588,29 @@ function backupReturnedData_(targetSpreadsheetId) {
       }
     }
     
+    // 書き込み権限の確認(先頭セルへ同じ値を書き戻す無害なプローブ。
+    // 閲覧のみの権限だとここで例外になり、空振りするトリガーの設置を防げる)
+    try {
+      const probe = targetSheet.getRange(1, 1);
+      probe.setValue(probe.getValue());
+    } catch (e) {
+      return { success: false, count: 0, message: `バックアップ先に書き込めません(編集権限を確認してください): ${e.message}` };
+    }
+
+    // 返却済みデータを抽出
+    const returnedData = data.filter((row, index) =>
+      index > 0 && row[statusColIndex] === "返却済"
+    );
+
+    if (returnedData.length === 0) {
+      return { success: true, count: 0, message: "バックアップ対象の返却済データはありません(バックアップ先の検証は成功しました)。" };
+    }
+
     // 返却済みデータをバックアップ先に追加
     targetSheet.getRange(
-      targetSheet.getLastRow() + 1, 
-      1, 
-      returnedData.length, 
+      targetSheet.getLastRow() + 1,
+      1,
+      returnedData.length,
       headers.length
     ).setValues(returnedData);
     
@@ -3106,7 +3121,8 @@ function getSettingDescription(key) {
     libraryName: "図書館名",
     operationMode: "運用モード",
     notifyIntervalDays: "延滞通知の再送間隔（日数）",
-    overdueTemplate: "延滞通知メールの文面テンプレート"
+    overdueTemplate: "延滞通知メールの文面テンプレート",
+    backupSpreadsheetId: "返却済データのバックアップ先スプレッドシートID"
   };
   
   return descriptions[key] || "";
@@ -3543,6 +3559,133 @@ function installOverdueTriggerFromMenu() {
 function removeOverdueTriggerFromMenu() {
   const result = removeOverdueTrigger();
   SpreadsheetApp.getUi().alert('延滞通知トリガー解除', result.message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * 月次アーカイブのトリガーエントリ関数。
+ * 設定DBの backupSpreadsheetId を使い、返却済データをバックアップ先へ
+ * 移動して貸出記録シートを痩せさせる(未設定の場合は何もしない)。
+ * @return {object} 処理結果 {success: boolean, count?: number, message: string}
+ */
+function archiveReturnedRecords() {
+  try {
+    const settings = getLibrarySettings();
+    const targetId = settings.backupSpreadsheetId ? settings.backupSpreadsheetId.toString().trim() : "";
+    if (!targetId) {
+      const msg = "backupSpreadsheetId が未設定のため月次アーカイブをスキップしました。管理メニューから再設置してください。";
+      console.warn(msg);
+      return { success: false, message: msg };
+    }
+    const result = backupReturnedData(targetId);
+    console.log(`月次アーカイブ: ${result.message}`);
+    return result;
+  } catch (error) {
+    console.error(`月次アーカイブ中にエラーが発生しました: ${error}`);
+    return { success: false, message: `月次アーカイブに失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 月次アーカイブの時間主導トリガーを設置する関数(毎月1日の3時台)
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function installArchiveTrigger() {
+  try {
+    removeArchiveTrigger(); // 二重設置を防ぐ
+    ScriptApp.newTrigger('archiveReturnedRecords')
+      .timeBased()
+      .onMonthDay(1)
+      .atHour(3)
+      .create();
+    const msg = "月次アーカイブトリガーを設置しました(毎月1日の3時台に実行)。";
+    console.log(msg);
+    return { success: true, message: msg };
+  } catch (error) {
+    console.error(`アーカイブトリガー設置中にエラーが発生しました: ${error}`);
+    return { success: false, message: `トリガー設置に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 月次アーカイブの時間主導トリガーを解除する関数
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function removeArchiveTrigger() {
+  try {
+    let removed = 0;
+    ScriptApp.getProjectTriggers().forEach(trigger => {
+      if (trigger.getHandlerFunction() === 'archiveReturnedRecords') {
+        ScriptApp.deleteTrigger(trigger);
+        removed++;
+      }
+    });
+    const msg = removed > 0 ? `月次アーカイブトリガーを${removed}件解除しました。` : "設置済みの月次アーカイブトリガーはありません。";
+    console.log(msg);
+    return { success: true, message: msg };
+  } catch (error) {
+    console.error(`アーカイブトリガー解除中にエラーが発生しました: ${error}`);
+    return { success: false, message: `トリガー解除に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * メニューから月次アーカイブトリガーを設置する関数。
+ * バックアップ先スプレッドシートIDの入力(または既存設定の確認)と
+ * 接続確認を行い、設定DBへ保存してからトリガーを設置する。
+ */
+function installArchiveTriggerFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const settings = getLibrarySettings();
+  const current = settings.backupSpreadsheetId ? settings.backupSpreadsheetId.toString().trim() : "";
+
+  const prompt = ui.prompt(
+    '月次アーカイブトリガー設置',
+    'バックアップ先のスプレッドシートIDを入力してください。\n' +
+    '(疎通確認のため、設置時に初回バックアップを1回実行します)\n' +
+    (current
+      ? `現在の設定: ${current}\n(空のままOKを押すと現在の設定を使用します)`
+      : '(例: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms)'),
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (prompt.getSelectedButton() !== ui.Button.OK) return;
+
+  const input = prompt.getResponseText().trim();
+  const targetId = input || current;
+  if (!targetId) {
+    ui.alert('エラー', 'バックアップ先のスプレッドシートIDが必要です。', ui.ButtonSet.OK);
+    return;
+  }
+
+  // 疎通確認を兼ねて実際にバックアップを1回実行する。
+  // openByIdだけでは「開けるが書き込めない」「バックアップシートのヘッダーが
+  // 不適合」を検出できず、毎月空振りするトリガーが設置されてしまうため、
+  // 本番と同じ経路(権限・ヘッダー互換チェック込み)で検証する
+  const testRun = backupReturnedData(targetId);
+  if (!testRun.success) {
+    ui.alert('エラー', `バックアップ先の検証に失敗したため、トリガーは設置しません:\n${testRun.message}`, ui.ButtonSet.OK);
+    return;
+  }
+
+  const saveResult = saveLibrarySettings({ backupSpreadsheetId: targetId });
+  if (!saveResult.success) {
+    ui.alert('エラー', `バックアップ先の保存に失敗しました: ${saveResult.message}`, ui.ButtonSet.OK);
+    return;
+  }
+
+  const result = installArchiveTrigger();
+  ui.alert(
+    result.success ? '月次アーカイブトリガー設置' : '設置失敗',
+    `${result.message}\n(疎通確認として初回バックアップを実行しました: ${testRun.message})`,
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * メニューから月次アーカイブトリガーを解除する関数
+ */
+function removeArchiveTriggerFromMenu() {
+  const result = removeArchiveTrigger();
+  SpreadsheetApp.getUi().alert('月次アーカイブトリガー解除', result.message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
