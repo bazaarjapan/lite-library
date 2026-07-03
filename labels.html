@@ -157,7 +157,7 @@
 
   <script>
     let items = []; // {id, label}
-    let allChecked = true;
+    let selectedIds = new Set(); // 絞り込みや再描画をまたいで選択状態を保持する
 
     // ラベル用紙プリセット(A4 210×297mm)
     const PAPER_PRESETS = {
@@ -177,7 +177,7 @@
       google.script.run
         .withSuccessHandler(function(result) {
           items = result || [];
-          allChecked = true;
+          selectedIds = new Set(items.map(item => item.id)); // 初期状態は全選択
           renderList();
           setMessage(items.length + '件を読み込みました。');
         })
@@ -209,8 +209,12 @@
         row.className = 'item-row';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.checked = allChecked;
+        checkbox.checked = selectedIds.has(item.id);
         checkbox.dataset.id = item.id;
+        checkbox.addEventListener('change', function() {
+          if (this.checked) selectedIds.add(item.id);
+          else selectedIds.delete(item.id);
+        });
         const idSpan = document.createElement('span');
         idSpan.className = 'item-id';
         idSpan.textContent = item.id;
@@ -242,13 +246,8 @@
         setMessage('バーコード生成ライブラリを読み込めませんでした。通信状態を確認して再読み込みしてください。');
         return;
       }
-      const selected = [];
-      document.querySelectorAll('#item-list input[type="checkbox"]').forEach(cb => {
-        if (cb.checked) {
-          const item = items.find(i => i.id === cb.dataset.id);
-          if (item) selected.push(item);
-        }
-      });
+      // 絞り込み表示中でも選択済みの全項目を印刷対象にする(選択状態はSetで保持)
+      const selected = items.filter(item => selectedIds.has(item.id));
       if (selected.length === 0) {
         setMessage('印刷するラベルにチェックを入れてください。');
         return;
@@ -313,8 +312,14 @@
     document.getElementById('target-type').addEventListener('change', loadItems);
     document.getElementById('filter-text').addEventListener('input', renderList);
     document.getElementById('select-all-button').addEventListener('click', function() {
-      allChecked = !allChecked;
-      document.querySelectorAll('#item-list input[type="checkbox"]').forEach(cb => { cb.checked = allChecked; });
+      // 絞り込み表示中の項目を対象にトグルする(全選択済みなら解除、そうでなければ全選択)
+      const filtered = getFilteredItems();
+      const allSelected = filtered.length > 0 && filtered.every(item => selectedIds.has(item.id));
+      filtered.forEach(item => {
+        if (allSelected) selectedIds.delete(item.id);
+        else selectedIds.add(item.id);
+      });
+      renderList();
     });
     document.getElementById('print-button').addEventListener('click', printLabels);
 
