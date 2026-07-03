@@ -2015,6 +2015,7 @@ function onOpen() {
       .addItem('返却済データのバックアップ', 'showBackupDialog')
       .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
       .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu')
+      .addItem('【開発用】データ初期化+ダミーデータ投入', 'seedDummyDataFromMenu')
       .addToUi();
 }
 
@@ -3686,6 +3687,111 @@ function installArchiveTriggerFromMenu() {
 function removeArchiveTriggerFromMenu() {
   const result = removeArchiveTrigger();
   SpreadsheetApp.getUi().alert('月次アーカイブトリガー解除', result.message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * メニューからデータ初期化+ダミーデータ投入を実行する関数(開発・デモ用)
+ * 書籍DB・利用者DB・貸出記録の既存データをすべて消して置き換えるため、
+ * 実行前に確認ダイアログを出す。
+ */
+function seedDummyDataFromMenu() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert(
+    '【開発用】データ初期化+ダミーデータ投入',
+    '書籍DB・利用者DB・貸出記録の既存データをすべて削除し、ダミーデータに置き換えます。\n' +
+    'この操作は元に戻せません(設定DBは変更しません)。実行しますか?',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (confirm !== ui.Button.OK) return;
+
+  const result = seedDummyData();
+  ui.alert(result.success ? 'ダミーデータ投入完了' : 'ダミーデータ投入失敗', result.message, ui.ButtonSet.OK);
+}
+
+/**
+ * データを初期化してダミーデータを投入する関数(開発・デモ用)
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function seedDummyData() {
+  return runWithScriptLock_(
+    () => seedDummyData_(),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function seedDummyData_() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const now = new Date();
+    const daysAgo = n => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
+    const daysLater = n => new Date(now.getTime() + n * 24 * 60 * 60 * 1000);
+
+    // シートを取得し、ヘッダーをSCHEMAで書き直してデータ行をクリアする
+    const resetSheet = sheetName => {
+      let sheet = ss.getSheetByName(sheetName);
+      if (!sheet) {
+        sheet = ss.insertSheet(sheetName);
+      }
+      sheet.clearContents();
+      const headers = SCHEMA[sheetName].headers;
+      // グリッドが定義より狭い場合は列を足す
+      if (sheet.getMaxColumns() < headers.length) {
+        sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+      }
+      const headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setValues([headers]);
+      headerRange.setFontWeight("bold").setBackground("#f3f3f3");
+      sheet.setFrozenRows(1);
+      return sheet;
+    };
+
+    // --- 利用者DB: 5名(1名は削除済み) ---
+    // 電話番号は先頭の0が消えないよう书式を「テキスト」にして書き込む
+    const userSheet = resetSheet("利用者DB");
+    const users = [
+      ["R00001", "山田太郎", "taro.yamada@example.com", "090-0000-0001", "東京都千代田区1-1-1", daysAgo(400), ""],
+      ["R00002", "佐藤花子", "hanako.sato@example.com", "090-0000-0002", "東京都中央区2-2-2", daysAgo(300), ""],
+      ["R00003", "鈴木一郎", "ichiro.suzuki@example.com", "090-0000-0003", "東京都港区3-3-3", daysAgo(200), ""],
+      ["R00004", "田中美咲", "misaki.tanaka@example.com", "090-0000-0004", "東京都新宿区4-4-4", daysAgo(100), ""],
+      ["R00005", "高橋健", "ken.takahashi@example.com", "090-0000-0005", "東京都渋谷区5-5-5", daysAgo(500), "削除済み"]
+    ];
+    userSheet.getRange(2, 4, users.length, 1).setNumberFormat("@"); // 電話番号列
+    userSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
+
+    // --- 書籍DB: 6冊(実在ISBN・複数コピー・1冊は廃棄) ---
+    const bookSheet = resetSheet("書籍DB");
+    const books = [
+      ["9784815615604-001", "9784815615604", "22世紀の民主主義", "成田悠輔", "SBクリエイティブ", "", "貸出中"],
+      ["9784815615604-002", "9784815615604", "22世紀の民主主義", "成田悠輔", "SBクリエイティブ", "", "在庫"],
+      ["9784046067012-001", "9784046067012", "ラスボスに負けても", "ハネハネ", "KADOKAWA", "", "在庫"],
+      ["9784588007040-001", "9784588007040", "報酬主義をこえて", "アルフィ・コーン", "法政大学出版局", "", "貸出中"],
+      ["9784296002764-001", "9784296002764", "「考える力」と「好奇心」をぐんぐん伸ばす AI×学び入門", "安井正樹", "日経BP", "", "在庫"],
+      ["9784296002764-002", "9784296002764", "「考える力」と「好奇心」をぐんぐん伸ばす AI×学び入門", "安井正樹", "日経BP", "水濡れのため", "廃棄"]
+    ];
+    bookSheet.getRange(2, 1, books.length, books[0].length).setValues(books);
+
+    // --- 貸出記録: 3件(延滞1・貸出中1・返却済1)。書籍DBの状態と整合させる ---
+    const lendingSheet = resetSheet("貸出記録");
+    const lendings = [
+      // 延滞中: 30日前に貸出、16日前が返却期限
+      ["9784815615604-001", "22世紀の民主主義", "R00001", "山田太郎", daysAgo(30), daysAgo(16), "未返却", ""],
+      // 貸出中(期限内): 3日前に貸出、11日後が返却期限
+      ["9784588007040-001", "報酬主義をこえて", "R00002", "佐藤花子", daysAgo(3), daysLater(11), "未返却", ""],
+      // 返却済: 60日前に貸出、46日前期限、50日前に返却
+      ["9784046067012-001", "ラスボスに負けても", "R00003", "鈴木一郎", daysAgo(60), daysAgo(46), "返却済", daysAgo(50)]
+    ];
+    lendingSheet.getRange(2, 1, lendings.length, lendings[0].length).setValues(lendings);
+
+    const message =
+      `ダミーデータを投入しました。\n` +
+      `利用者: ${users.length}名(うち削除済み1名) / 書籍: ${books.length}冊(うち廃棄1冊) / ` +
+      `貸出記録: ${lendings.length}件(延滞1・貸出中1・返却済1)`;
+    console.log(message);
+    return { success: true, message: message };
+  } catch (error) {
+    console.error(`ダミーデータ投入中にエラーが発生しました: ${error}`);
+    return { success: false, message: `ダミーデータ投入に失敗しました: ${error.message}` };
+  }
 }
 
 /**
