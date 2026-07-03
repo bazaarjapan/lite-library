@@ -3758,6 +3758,11 @@ function seedDummyDataFromMenu() {
 
 function seedDummyData_() {
   try {
+    // 確認ダイアログ表示中に運用モードが戻された場合に備え、ロック内で再確認する
+    if (!isDevelopmentMode_()) {
+      return { success: false, message: "開発モードではないため中止しました。設定DBの operationMode を確認してください。" };
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const now = new Date();
     const daysAgo = n => new Date(now.getTime() - n * 24 * 60 * 60 * 1000);
