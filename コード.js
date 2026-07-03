@@ -2027,12 +2027,23 @@ function onOpen() {
 
 /**
  * 設定DBの operationMode が development かどうかを返す関数
- * (読み取りに失敗した場合は安全側に倒して false)
+ * 破壊的操作のガードに使うため、getLibrarySettings のキャッシュ(最大5分)を
+ * 介さず設定DBシートを直接読む(シートを直接 normal に戻した直後でも
+ * 古いキャッシュで実行できてしまわないように)。
+ * 読み取りに失敗した場合は安全側に倒して false。
  * @return {boolean} 開発モードなら true
  */
 function isDevelopmentMode_() {
   try {
-    return getLibrarySettings().operationMode === "development";
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("設定DB");
+    if (!sheet || sheet.getLastRow() < 2) return false;
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+    for (const row of data) {
+      if ((row[0] || "").toString().trim() === "operationMode") {
+        return (row[1] || "").toString().trim() === "development";
+      }
+    }
+    return false;
   } catch (error) {
     console.warn(`運用モードの取得に失敗しました(開発モード無効として扱います): ${error}`);
     return false;
@@ -3753,16 +3764,20 @@ function seedDummyData_() {
     const daysLater = n => new Date(now.getTime() + n * 24 * 60 * 60 * 1000);
 
     // シートを取得し、ヘッダーをSCHEMAで書き直してデータ行をクリアする
-    const resetSheet = sheetName => {
+    const resetSheet = (sheetName, dataRowCount) => {
       let sheet = ss.getSheetByName(sheetName);
       if (!sheet) {
         sheet = ss.insertSheet(sheetName);
       }
       sheet.clearContents();
       const headers = SCHEMA[sheetName].headers;
-      // グリッドが定義より狭い場合は列を足す
+      // グリッドが定義より狭い場合は列・行を足す(切り詰められたシートで範囲外エラーにしない)
       if (sheet.getMaxColumns() < headers.length) {
         sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
+      }
+      const requiredRows = dataRowCount + 1; // ヘッダー行を含む
+      if (sheet.getMaxRows() < requiredRows) {
+        sheet.insertRowsAfter(sheet.getMaxRows(), requiredRows - sheet.getMaxRows());
       }
       const headerRange = sheet.getRange(1, 1, 1, headers.length);
       headerRange.setValues([headers]);
@@ -3773,7 +3788,7 @@ function seedDummyData_() {
 
     // --- 利用者DB: 5名(1名は削除済み) ---
     // 電話番号は先頭の0が消えないよう书式を「テキスト」にして書き込む
-    const userSheet = resetSheet("利用者DB");
+    const userSheet = resetSheet("利用者DB", 5);
     const users = [
       ["R00001", "山田太郎", "taro.yamada@example.com", "090-0000-0001", "東京都千代田区1-1-1", daysAgo(400), ""],
       ["R00002", "佐藤花子", "hanako.sato@example.com", "090-0000-0002", "東京都中央区2-2-2", daysAgo(300), ""],
@@ -3785,7 +3800,7 @@ function seedDummyData_() {
     userSheet.getRange(2, 1, users.length, users[0].length).setValues(users);
 
     // --- 書籍DB: 6冊(実在ISBN・複数コピー・1冊は廃棄) ---
-    const bookSheet = resetSheet("書籍DB");
+    const bookSheet = resetSheet("書籍DB", 6);
     const books = [
       ["9784815615604-001", "9784815615604", "22世紀の民主主義", "成田悠輔", "SBクリエイティブ", "", "貸出中"],
       ["9784815615604-002", "9784815615604", "22世紀の民主主義", "成田悠輔", "SBクリエイティブ", "", "在庫"],
@@ -3797,7 +3812,7 @@ function seedDummyData_() {
     bookSheet.getRange(2, 1, books.length, books[0].length).setValues(books);
 
     // --- 貸出記録: 3件(延滞1・貸出中1・返却済1)。書籍DBの状態と整合させる ---
-    const lendingSheet = resetSheet("貸出記録");
+    const lendingSheet = resetSheet("貸出記録", 3);
     const lendings = [
       // 延滞中: 30日前に貸出、16日前が返却期限
       ["9784815615604-001", "22世紀の民主主義", "R00001", "山田太郎", daysAgo(30), daysAgo(16), "未返却", ""],
