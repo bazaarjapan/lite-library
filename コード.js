@@ -2527,16 +2527,9 @@ function backupReturnedData_(targetSpreadsheetId) {
       return { success: false, count: 0, message: "返却状況の列が見つかりません。" };
     }
     
-    // 返却済みデータを抽出
-    const returnedData = data.filter((row, index) => 
-      index > 0 && row[statusColIndex] === "返却済"
-    );
-    
-    if (returnedData.length === 0) {
-      return { success: true, count: 0, message: "バックアップ対象の返却済データがありません。" };
-    }
-    
-    // バックアップ先のヘッダーを確認する(既存のバックアップデータは決して消さない)
+    // バックアップ先のヘッダーを確認する(既存のバックアップデータは決して消さない)。
+    // 対象0件でも先に互換性・書き込み可否を検証することで、トリガー設置時の
+    // 疎通確認としても機能させる(0件成功で検証をスキップしない)
     const targetData = targetSheet.getDataRange().getValues();
     const targetIsEmpty = targetData.length === 0 ||
       (targetData.length === 1 && targetData[0].every(cell => cell === ""));
@@ -2593,11 +2586,29 @@ function backupReturnedData_(targetSpreadsheetId) {
       }
     }
     
+    // 書き込み権限の確認(先頭セルへ同じ値を書き戻す無害なプローブ。
+    // 閲覧のみの権限だとここで例外になり、空振りするトリガーの設置を防げる)
+    try {
+      const probe = targetSheet.getRange(1, 1);
+      probe.setValue(probe.getValue());
+    } catch (e) {
+      return { success: false, count: 0, message: `バックアップ先に書き込めません(編集権限を確認してください): ${e.message}` };
+    }
+
+    // 返却済みデータを抽出
+    const returnedData = data.filter((row, index) =>
+      index > 0 && row[statusColIndex] === "返却済"
+    );
+
+    if (returnedData.length === 0) {
+      return { success: true, count: 0, message: "バックアップ対象の返却済データはありません(バックアップ先の検証は成功しました)。" };
+    }
+
     // 返却済みデータをバックアップ先に追加
     targetSheet.getRange(
-      targetSheet.getLastRow() + 1, 
-      1, 
-      returnedData.length, 
+      targetSheet.getLastRow() + 1,
+      1,
+      returnedData.length,
       headers.length
     ).setValues(returnedData);
     
