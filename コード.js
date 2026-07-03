@@ -3704,19 +3704,14 @@ function seedDummyDataFromMenu() {
   );
   if (confirm !== ui.Button.OK) return;
 
-  const result = seedDummyData();
-  ui.alert(result.success ? 'ダミーデータ投入完了' : 'ダミーデータ投入失敗', result.message, ui.ButtonSet.OK);
-}
-
-/**
- * データを初期化してダミーデータを投入する関数(開発・デモ用)
- * @return {object} 処理結果 {success: boolean, message: string}
- */
-function seedDummyData() {
-  return runWithScriptLock_(
+  // 公開ラッパーは作らない: google.script.run から確認なしで呼べると
+  // Webアプリの利用者が全データを消せてしまうため、メニュー経由でのみ実行する
+  // (この関数自体は SpreadsheetApp.getUi() がWebアプリ文脈では例外になるため悪用できない)
+  const result = runWithScriptLock_(
     () => seedDummyData_(),
     { success: false, message: LOCK_BUSY_MESSAGE }
   );
+  ui.alert(result.success ? 'ダミーデータ投入完了' : 'ダミーデータ投入失敗', result.message, ui.ButtonSet.OK);
 }
 
 function seedDummyData_() {
