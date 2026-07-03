@@ -502,7 +502,8 @@ function getUserInfo(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, SCHEMA["利用者DB"].headers.length).getValues()[0];
+      // 既存シートが6列(状態列なし)の場合に範囲外エラーにならないよう実列数でクランプする
+      const row = userSheet.getRange(rowNumber, 1, 1, Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns())).getValues()[0];
       // 論理削除された利用者は「見つからない」扱いにする
       if ((row[SCHEMA["利用者DB"].col.状態] || "").toString().trim() === "削除済み") {
         console.warn(`利用者ID ${userId} は削除済みです。`);
@@ -1692,7 +1693,8 @@ function getUserDetails(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, SCHEMA["利用者DB"].headers.length).getValues()[0];
+      // 既存シートが6列(状態列なし)の場合に範囲外エラーにならないよう実列数でクランプする
+      const row = userSheet.getRange(rowNumber, 1, 1, Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns())).getValues()[0];
       const rowUserId = row[0] ? row[0].toString().trim() : "";
 
       // 論理削除された利用者は「見つからない」扱いにする(PIIも返さない)
