@@ -685,7 +685,10 @@
       
       // 現在の状態を表示
       const statusEl = document.getElementById('book-status');
-      if (data.isAvailable) {
+      if (data.status === '廃棄') {
+        statusEl.textContent = '廃棄';
+        statusEl.className = 'stat-value status-borrowed';
+      } else if (data.isAvailable) {
         statusEl.textContent = '貸出可能';
         statusEl.className = 'stat-value status-available';
       } else {
@@ -797,6 +800,11 @@
     
     // 削除確認を表示する関数
     function confirmDelete() {
+      // 廃棄済みの書籍を重ねて削除しない
+      if (currentBookData && currentBookData.status === '廃棄') {
+        showMessage('この書籍は既に廃棄済みです', 'error');
+        return;
+      }
       // 貸出中の書籍は削除できないチェック
       if (currentBookData && !currentBookData.isAvailable) {
         showMessage('貸出中の書籍は削除できません', 'error');

@@ -13,8 +13,9 @@ const SCHEMA = {
     col: { 管理番号: 0, ISBN: 1, 書籍名: 2, 著者名: 3, 出版社: 4, 備考: 5, 状態: 6 }
   },
   "利用者DB": {
-    headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日"],
-    col: { 利用者ID: 0, 氏名: 1, メールアドレス: 2, 電話番号: 3, 住所: 4, 登録日: 5 }
+    // 状態: 空または「有効」= 有効 / 「削除済み」= 論理削除(行は残し、貸出記録との参照を守る)
+    headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日", "状態"],
+    col: { 利用者ID: 0, 氏名: 1, メールアドレス: 2, 電話番号: 3, 住所: 4, 登録日: 5, 状態: 6 }
   },
   "貸出記録": {
     headers: ["書籍ID", "書籍名", "利用者ID", "利用者名", "貸出日時", "返却予定日", "返却状況", "返却日時"],
@@ -501,7 +502,13 @@ function getUserInfo(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, 2).getValues()[0];
+      // 既存シートが6列(状態列なし)の場合に範囲外エラーにならないよう実列数でクランプする
+      const row = userSheet.getRange(rowNumber, 1, 1, Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns())).getValues()[0];
+      // 論理削除された利用者は「見つからない」扱いにする
+      if ((row[SCHEMA["利用者DB"].col.状態] || "").toString().trim() === "削除済み") {
+        console.warn(`利用者ID ${userId} は削除済みです。`);
+        return null;
+      }
       const userName = row[1] || "氏名不明";
       console.log(`利用者情報取得成功: ${userName}`);
       // クライアントは氏名しか使わないため、メールアドレス等のPIIは返さない
@@ -1686,8 +1693,15 @@ function getUserDetails(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, 6).getValues()[0];
+      // 既存シートが6列(状態列なし)の場合に範囲外エラーにならないよう実列数でクランプする
+      const row = userSheet.getRange(rowNumber, 1, 1, Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns())).getValues()[0];
       const rowUserId = row[0] ? row[0].toString().trim() : "";
+
+      // 論理削除された利用者は「見つからない」扱いにする(PIIも返さない)
+      if ((row[SCHEMA["利用者DB"].col.状態] || "").toString().trim() === "削除済み") {
+        console.warn(`getUserDetails: 利用者ID ${userId} は削除済みです。`);
+        return null;
+      }
 
       // 日付を文字列に変換して返す
       const registrationDate = row[5] || null;
@@ -1896,14 +1910,16 @@ function deleteUser_(userId) {
     
     const data = userSheet.getDataRange().getValues();
     const userIdColIndex = 0; // A列
-    
+
     // ヘッダー行を除いて検索
     for (let i = 1; i < data.length; i++) {
       const rowUserId = data[i][userIdColIndex] ? data[i][userIdColIndex].toString().trim() : "";
       if (rowUserId.toLowerCase() === userId.trim().toLowerCase()) {
-        // 行を削除
-        userSheet.deleteRow(i + 1);
-        console.log(`利用者を削除しました: ${userId}`);
+        // 論理削除: 行は残して状態を「削除済み」にする。
+        // 過去の貸出記録との参照を守り、同じ利用者IDの再発行も防ぐ
+        ensureUserStatusColumn_();
+        userSheet.getRange(i + 1, SCHEMA["利用者DB"].col.状態 + 1).setValue("削除済み");
+        console.log(`利用者を論理削除しました: ${userId}`);
         return true;
       }
     }
@@ -2063,6 +2079,10 @@ function setupLibrarySystem() {
       sheet.autoResizeColumns(1, def.headers.length);
     });
 
+    // 既存の利用者DBに「状態」列(論理削除用・末尾追加)がなければヘッダーだけ補完する
+    // (データには触れない。空=有効として扱われる)
+    ensureUserStatusColumn_();
+
     // 設定DBは ensureSettingsSheet_ がデフォルト設定込みで初期化する
     // (シートが存在しない場合と、空タブとして手動作成済みの場合の両方に対応。
     //  getLibrarySettings はキャッシュヒット時にシートを作成しないためここでは使わない)
@@ -2131,12 +2151,15 @@ function validateSchema_() {
         problems.push(`シート「${sheetName}」が空です(ヘッダーがありません)`);
         continue;
       }
-      const actual = sheet.getRange(1, 1, 1, def.headers.length).getValues()[0]
+      // グリッドが定義より狭いシートでも範囲外エラーにせず「(列なし)」として報告する
+      const width = Math.min(def.headers.length, sheet.getMaxColumns());
+      const actual = sheet.getRange(1, 1, 1, width).getValues()[0]
         .map(v => (v === undefined || v === null) ? "" : v.toString().trim());
       def.headers.forEach((expected, idx) => {
-        if (actual[idx] !== expected) {
+        const actualValue = idx < width ? actual[idx] : "(列なし)";
+        if (actualValue !== expected) {
           const colLetter = String.fromCharCode(65 + idx);
-          problems.push(`「${sheetName}」${colLetter}列: 期待「${expected}」/ 実際「${actual[idx] || "(空)"}」`);
+          problems.push(`「${sheetName}」${colLetter}列: 期待「${expected}」/ 実際「${actualValue || "(空)"}」`);
         }
       });
     }
@@ -2228,8 +2251,10 @@ function analyzeBookStatusConsistency_() {
         if (!managementNumber) continue;
         const idKey = managementNumber.toString().trim().toLowerCase();
         knownIds.add(idKey);
-        const expected = unreturnedCounts.has(idKey) ? "貸出中" : "在庫";
         const actual = (bookData[i][SCHEMA["書籍DB"].col.状態] || "在庫").toString().trim();
+        // 論理削除(廃棄)の本は未返却がない限り対象外(修復で在庫に戻さない)
+        if (actual === "廃棄" && !unreturnedCounts.has(idKey)) continue;
+        const expected = unreturnedCounts.has(idKey) ? "貸出中" : "在庫";
         if (actual !== expected) {
           mismatches.push({
             rowNumber: i + 1,
@@ -2926,6 +2951,30 @@ ${libraryName}管理システム
 // 設定DBシートを直接編集した場合は最大TTL秒だけ古い値が使われる。
 const SETTINGS_CACHE_KEY = "librarySettings_v1";
 const SETTINGS_CACHE_TTL_SECONDS = 300;
+
+/**
+ * 利用者DBに「状態」列(論理削除用)のヘッダーがなければ補完する関数(冪等)。
+ * 末尾列の追加のみでデータには触れない。既に別のヘッダーが入っている場合は
+ * 上書きせず、validateSchema_ の検出に委ねる。
+ */
+function ensureUserStatusColumn_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const userSheet = ss.getSheetByName("利用者DB");
+  if (!userSheet || userSheet.getLastRow() === 0) return;
+
+  const statusColNumber = SCHEMA["利用者DB"].col.状態 + 1;
+  // グリッドが6列ちょうどに切り詰められたシートでは getRange(1, 7) が
+  // 範囲外エラーになるため、先に物理列を追加する
+  if (userSheet.getMaxColumns() < statusColNumber) {
+    userSheet.insertColumnsAfter(userSheet.getMaxColumns(), statusColNumber - userSheet.getMaxColumns());
+  }
+  const headerCell = userSheet.getRange(1, statusColNumber);
+  const current = headerCell.getValue();
+  if (current === "" || current === null) {
+    headerCell.setValue("状態");
+    headerCell.setFontWeight("bold").setBackground("#f3f3f3");
+  }
+}
 
 /**
  * 設定DBシートを取得する(存在しない・空の場合はヘッダーとデフォルト設定を投入して作成)。
@@ -4022,7 +4071,7 @@ function getBookInventory() {
           title: title || "タイトル不明",
           author: author,
           publisher: publisher,
-          status: dbStatus === "貸出中" ? "貸出中" : (lendingInfo ? "貸出中" : "在庫"),
+          status: dbStatus === "廃棄" ? "廃棄" : (dbStatus === "貸出中" || lendingInfo ? "貸出中" : "在庫"),
           borrowerName: lendingInfo ? lendingInfo.borrowerName : null,
           borrowerId: lendingInfo ? lendingInfo.borrowerId : null,
           lendingDate: lendingInfo ? lendingInfo.lendingDate : null,
@@ -4101,8 +4150,24 @@ function getBookFullDetails(bookId) {
     for (let i = 1; i < bookData.length; i++) {
       const rowBookId = bookData[i][bookIdColIndex] ? bookData[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookId.trim().toLowerCase()) {
-        // 基本情報
-        const bookInfo = {
+        // 基本情報(レイアウトに応じて列をマッピングする)
+        const isNew = isNewBookLayout_(bookSheet);
+        const col = SCHEMA["書籍DB"].col;
+        const bookInfo = isNew ? {
+          // 新レイアウト: A=管理番号, B=ISBN, C=書籍名, D=著者名, E=出版社, F=備考, G=状態
+          bookId: rowBookId,
+          title: bookData[i][col.書籍名] || "",
+          author: bookData[i][col.著者名] || "",
+          publisher: bookData[i][col.出版社] || "",
+          note: bookData[i][col.備考] || "",
+          category: "",
+          location: "",
+          registrationDate: null,
+          isAvailable: true,
+          status: (bookData[i][col.状態] || "").toString().trim(),
+          lastLendingDate: null
+        } : {
+          // 旧レイアウト: A=書籍ID, B=書籍名, C=著者名, D=出版社, E=備考, F=分類, G=配架場所, H=登録日
           bookId: rowBookId,
           title: bookData[i][1] || "",
           author: bookData[i][2] || "",
@@ -4112,8 +4177,14 @@ function getBookFullDetails(bookId) {
           location: bookData[i][6] || "",
           registrationDate: toIsoString_(bookData[i][7] || new Date()),
           isAvailable: true,
+          status: "",
           lastLendingDate: null
         };
+
+        // 論理削除(廃棄)された本は貸出可能と誤表示しない
+        if (bookInfo.status === "廃棄") {
+          bookInfo.isAvailable = false;
+        }
         
         // 貸出状態と最終貸出日を確認
         if (lendingSheet) {
@@ -4225,23 +4296,32 @@ function updateBookInfo_(bookData) {
     for (let i = 1; i < data.length; i++) {
       const rowBookId = data[i][bookIdColIndex] ? data[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookData.bookId.trim().toLowerCase()) {
-        // 既存の登録日を保持
-        const registrationDate = data[i][7] || new Date();
-        
-        // 更新する行のデータを作成
-        const updatedRow = [
-          rowBookId, // 書籍ID（変更不可）
-          bookData.title || "",
-          bookData.author || "",
-          bookData.publisher || "",
-          bookData.note || "",
-          bookData.category || "",
-          bookData.location || "",
-          registrationDate
-        ];
-        
-        // 行を更新
-        bookSheet.getRange(i + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
+        if (isNewBookLayout_(bookSheet)) {
+          // 新レイアウト: 書籍名(C)〜備考(F)のみ更新する。
+          // A=管理番号・B=ISBN・G=状態(在庫/貸出中/廃棄)は編集で変更しない
+          // (旧マッピングのまま書くとISBNや状態列を上書きして行が壊れる)
+          const col = SCHEMA["書籍DB"].col;
+          bookSheet.getRange(i + 1, col.書籍名 + 1, 1, 4).setValues([[
+            bookData.title || "",
+            bookData.author || "",
+            bookData.publisher || "",
+            bookData.note || ""
+          ]]);
+        } else {
+          // 旧レイアウト: A=書籍ID, B=書籍名, C=著者名, D=出版社, E=備考, F=分類, G=配架場所, H=登録日
+          const registrationDate = data[i][7] || new Date();
+          const updatedRow = [
+            rowBookId, // 書籍ID（変更不可）
+            bookData.title || "",
+            bookData.author || "",
+            bookData.publisher || "",
+            bookData.note || "",
+            bookData.category || "",
+            bookData.location || "",
+            registrationDate
+          ];
+          bookSheet.getRange(i + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
+        }
         console.log(`書籍情報を更新しました: ${bookData.bookId}`);
         return true;
       }
@@ -4295,20 +4375,25 @@ function deleteBook_(bookId) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。先に管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
     const data = bookSheet.getDataRange().getValues();
     const bookIdColIndex = 0; // A列
-    
+
     // ヘッダー行を除いて検索
     for (let i = 1; i < data.length; i++) {
       const rowBookId = data[i][bookIdColIndex] ? data[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookId.trim().toLowerCase()) {
-        // 行を削除
-        bookSheet.deleteRow(i + 1);
-        console.log(`書籍を削除しました: ${bookId}`);
+        // 論理削除: 行は残して状態を「廃棄」にする。
+        // 過去の貸出記録との参照を守る(在庫扱いされないため貸出対象にはならない)
+        bookSheet.getRange(i + 1, SCHEMA["書籍DB"].col.状態 + 1).setValue("廃棄");
+        console.log(`書籍を論理削除(廃棄)しました: ${bookId}`);
         return true;
       }
     }
-    
+
     throw new Error("指定された書籍IDが見つかりません。");
   } catch (error) {
     console.error(`書籍の削除中にエラーが発生しました: ${error}`);
@@ -4336,11 +4421,19 @@ function createInventoryReport() {
     // 新しいシートを作成
     const reportSheet = ss.insertSheet(reportName);
     
-    // サマリー情報
-    const totalBooks = inventory.length;
-    const availableBooks = inventory.filter(book => book.status === 'available').length;
-    const borrowedBooks = inventory.filter(book => book.status === 'borrowed').length;
-    
+    // 状態値を正規化する(getBookInventory は日本語の状態を返す)
+    const normalizeStatus = book => {
+      if (book.status === '在庫' || book.status === 'available') return '在庫';
+      if (book.status === '廃棄' || book.status === 'discarded') return '廃棄';
+      return '貸出中';
+    };
+
+    // サマリー情報(廃棄は総蔵書数に含めず別掲する)
+    const discardedBooks = inventory.filter(book => normalizeStatus(book) === '廃棄').length;
+    const totalBooks = inventory.length - discardedBooks;
+    const availableBooks = inventory.filter(book => normalizeStatus(book) === '在庫').length;
+    const borrowedBooks = inventory.filter(book => normalizeStatus(book) === '貸出中').length;
+
     const summaryData = [
       ["書籍在庫リスト", ""],
       ["作成日時", Utilities.formatDate(now, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss")],
@@ -4348,6 +4441,7 @@ function createInventoryReport() {
       ["総蔵書数", totalBooks + "冊"],
       ["貸出可能", availableBooks + "冊"],
       ["貸出中", borrowedBooks + "冊"],
+      ["廃棄", discardedBooks + "冊"],
       ["", ""]
     ];
     
@@ -4363,7 +4457,8 @@ function createInventoryReport() {
     // データ行を作成
     if (inventory.length > 0) {
       const dataRows = inventory.map(book => {
-        const statusText = book.status === 'available' ? '貸出可能' : '貸出中';
+        const normalized = normalizeStatus(book);
+        const statusText = normalized === '在庫' ? '貸出可能' : normalized;
         return [
           book.bookId,
           book.title,
@@ -4381,8 +4476,11 @@ function createInventoryReport() {
       // 状態に応じて行の色を設定
       for (let i = 0; i < inventory.length; i++) {
         const row = currentRow + 1 + i;
-        if (inventory[i].status === 'borrowed') {
+        const normalized = normalizeStatus(inventory[i]);
+        if (normalized === '貸出中') {
           reportSheet.getRange(row, 1, 1, headers.length).setBackground("#fff3e0"); // 貸出中はオレンジ
+        } else if (normalized === '廃棄') {
+          reportSheet.getRange(row, 1, 1, headers.length).setBackground("#eceff1"); // 廃棄はグレー
         }
       }
       

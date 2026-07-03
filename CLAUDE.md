@@ -26,8 +26,9 @@ The script ID is in `.clasp.json`. Manual test helpers exist in コード.js (`t
 
 **Data store:** the container-bound Google Spreadsheet is the database (`SpreadsheetApp.getActiveSpreadsheet()`). Sheets are looked up by hard-coded Japanese names:
 
-- `書籍DB` — books, one row per physical copy: 管理番号 (management number, col A, the unique copy ID), ISBN (B), 書籍名 (C), ..., 状態 (G: `在庫` or `貸出中`). Multiple copies of the same ISBN share the ISBN but have distinct management numbers.
-- `利用者DB` — registered users, keyed by user ID.
+- `書籍DB` — books, one row per physical copy: 管理番号 (management number, col A, the unique copy ID), ISBN (B), 書籍名 (C), ..., 状態 (G: `在庫` / `貸出中` / `廃棄`). Multiple copies of the same ISBN share the ISBN but have distinct management numbers.
+- `利用者DB` — registered users, keyed by user ID; 状態 (G) is empty for active users or `削除済み`.
+- **Deletes are logical**: `deleteBook_` sets 状態=`廃棄`, `deleteUser_` sets 状態=`削除済み` — rows are never removed, preserving 貸出記録 references and preventing ID reuse. Readers (`getUserInfo`, `getUserDetails`) treat 削除済み as not found; `getAvailableBook`/lending only accept 在庫.
 - `貸出記録` — lending log; columns: 書籍ID, 書籍名, 利用者ID, 利用者名, 貸出日時, 返却予定日, 返却状況 (`未返却` / returned). Returns update this sheet and flip the book's status in 書籍DB.
 - `設定DB` — key/value settings (e.g. lending period in days), read via `getLibrarySettings()`.
 

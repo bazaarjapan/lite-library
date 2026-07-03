@@ -262,6 +262,11 @@
       color: #dc3545;
       font-weight: 700;
     }
+
+    .status-discarded {
+      color: #6c757d;
+      font-weight: 700;
+    }
     
     .status-reserved {
       color: #ffc107;
@@ -432,6 +437,7 @@
             <option value="">すべて</option>
             <option value="available">貸出可能</option>
             <option value="borrowed">貸出中</option>
+            <option value="discarded">廃棄</option>
           </select>
         </div>
         <div>
@@ -516,7 +522,7 @@
       }
       
       if (statusFilter) {
-        filteredData = filteredData.filter(book => book.status === statusFilter);
+        filteredData = filteredData.filter(book => toStatusKey(book.status) === statusFilter);
       }
       
       // サマリー更新
@@ -541,13 +547,17 @@
         const row = document.createElement('tr');
         
         let statusClass = '';
-        let statusText = '';
-        if (book.status === 'available' || book.status === '在庫') {
+        let statusText = book.status || '';
+        const statusKey = toStatusKey(book.status);
+        if (statusKey === 'available') {
           statusClass = 'status-available';
           statusText = '貸出可能';
-        } else if (book.status === 'borrowed' || book.status === '貸出中') {
+        } else if (statusKey === 'borrowed') {
           statusClass = 'status-borrowed';
           statusText = '貸出中';
+        } else if (statusKey === 'discarded') {
+          statusClass = 'status-discarded';
+          statusText = '廃棄';
         }
         
         row.innerHTML = `
@@ -569,11 +579,19 @@
       });
     }
     
-    // サマリーを更新する関数
+    // サーバーの状態値(在庫/貸出中/廃棄)を表示・絞り込み用のキーに正規化する関数
+    function toStatusKey(status) {
+      if (status === 'available' || status === '在庫') return 'available';
+      if (status === 'borrowed' || status === '貸出中') return 'borrowed';
+      if (status === 'discarded' || status === '廃棄') return 'discarded';
+      return status || '';
+    }
+
+    // サマリーを更新する関数(廃棄済みは総蔵書数に含めない)
     function updateSummary(data) {
-      const totalBooks = data.length;
-      const availableBooks = data.filter(book => book.status === 'available' || book.status === '在庫').length;
-      const borrowedBooks = data.filter(book => book.status === 'borrowed' || book.status === '貸出中').length;
+      const totalBooks = data.filter(book => toStatusKey(book.status) !== 'discarded').length;
+      const availableBooks = data.filter(book => toStatusKey(book.status) === 'available').length;
+      const borrowedBooks = data.filter(book => toStatusKey(book.status) === 'borrowed').length;
       
       document.getElementById('total-books').textContent = totalBooks;
       document.getElementById('available-books').textContent = availableBooks;
