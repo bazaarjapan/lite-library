@@ -922,10 +922,15 @@ function findRentalRecords(bookId) {
       const rowBookIdLower = rowBookId.toLowerCase();
       const bookIdLower = bookId.trim().toLowerCase();
       // ①完全一致(管理番号や旧形式のIDをそのまま入力した場合)
-      // ②ISBN一致(記録が管理番号の場合、複製番号サフィックス -nnn を除いて比較)
+      // ②ISBN一致: 記録側は「ハイフン付きISBNそのもの(978-4-296-00276-4)」と
+      //   「管理番号(ISBN-001)」の両方がありうるため、全体の正規化と
+      //   複製番号サフィックス(-nnn)除去後の正規化の両方で比較する
+      //   (前者を先に剥がすとISBNのチェックデジットを誤って除去してしまう)
+      const rowIsbnFull = normalizeIsbn_(rowBookId);
       const rowIsbnPart = normalizeIsbn_(rowBookId.replace(/-\d+$/, ""));
       const isIdMatch = rowBookIdLower === bookIdLower ||
-        (normalizedInputIsbn !== "" && rowIsbnPart === normalizedInputIsbn);
+        (normalizedInputIsbn !== "" &&
+          (rowIsbnFull === normalizedInputIsbn || rowIsbnPart === normalizedInputIsbn));
       Logger.log(`デバッグ\t行 ${i + 1} 詳細比較: ID一致=${isIdMatch}(${rowBookIdLower}=${bookIdLower})`);
       
       // 大文字小文字を区別せずに比較
