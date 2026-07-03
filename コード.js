@@ -4140,8 +4140,24 @@ function getBookFullDetails(bookId) {
     for (let i = 1; i < bookData.length; i++) {
       const rowBookId = bookData[i][bookIdColIndex] ? bookData[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookId.trim().toLowerCase()) {
-        // 基本情報
-        const bookInfo = {
+        // 基本情報(レイアウトに応じて列をマッピングする)
+        const isNew = isNewBookLayout_(bookSheet);
+        const col = SCHEMA["書籍DB"].col;
+        const bookInfo = isNew ? {
+          // 新レイアウト: A=管理番号, B=ISBN, C=書籍名, D=著者名, E=出版社, F=備考, G=状態
+          bookId: rowBookId,
+          title: bookData[i][col.書籍名] || "",
+          author: bookData[i][col.著者名] || "",
+          publisher: bookData[i][col.出版社] || "",
+          note: bookData[i][col.備考] || "",
+          category: "",
+          location: "",
+          registrationDate: null,
+          isAvailable: true,
+          status: (bookData[i][col.状態] || "").toString().trim(),
+          lastLendingDate: null
+        } : {
+          // 旧レイアウト: A=書籍ID, B=書籍名, C=著者名, D=出版社, E=備考, F=分類, G=配架場所, H=登録日
           bookId: rowBookId,
           title: bookData[i][1] || "",
           author: bookData[i][2] || "",
@@ -4156,12 +4172,8 @@ function getBookFullDetails(bookId) {
         };
 
         // 論理削除(廃棄)された本は貸出可能と誤表示しない
-        if (isNewBookLayout_(bookSheet)) {
-          const bookStatus = (bookData[i][SCHEMA["書籍DB"].col.状態] || "").toString().trim();
-          bookInfo.status = bookStatus;
-          if (bookStatus === "廃棄") {
-            bookInfo.isAvailable = false;
-          }
+        if (bookInfo.status === "廃棄") {
+          bookInfo.isAvailable = false;
         }
         
         // 貸出状態と最終貸出日を確認
@@ -4274,23 +4286,32 @@ function updateBookInfo_(bookData) {
     for (let i = 1; i < data.length; i++) {
       const rowBookId = data[i][bookIdColIndex] ? data[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookData.bookId.trim().toLowerCase()) {
-        // 既存の登録日を保持
-        const registrationDate = data[i][7] || new Date();
-        
-        // 更新する行のデータを作成
-        const updatedRow = [
-          rowBookId, // 書籍ID（変更不可）
-          bookData.title || "",
-          bookData.author || "",
-          bookData.publisher || "",
-          bookData.note || "",
-          bookData.category || "",
-          bookData.location || "",
-          registrationDate
-        ];
-        
-        // 行を更新
-        bookSheet.getRange(i + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
+        if (isNewBookLayout_(bookSheet)) {
+          // 新レイアウト: 書籍名(C)〜備考(F)のみ更新する。
+          // A=管理番号・B=ISBN・G=状態(在庫/貸出中/廃棄)は編集で変更しない
+          // (旧マッピングのまま書くとISBNや状態列を上書きして行が壊れる)
+          const col = SCHEMA["書籍DB"].col;
+          bookSheet.getRange(i + 1, col.書籍名 + 1, 1, 4).setValues([[
+            bookData.title || "",
+            bookData.author || "",
+            bookData.publisher || "",
+            bookData.note || ""
+          ]]);
+        } else {
+          // 旧レイアウト: A=書籍ID, B=書籍名, C=著者名, D=出版社, E=備考, F=分類, G=配架場所, H=登録日
+          const registrationDate = data[i][7] || new Date();
+          const updatedRow = [
+            rowBookId, // 書籍ID（変更不可）
+            bookData.title || "",
+            bookData.author || "",
+            bookData.publisher || "",
+            bookData.note || "",
+            bookData.category || "",
+            bookData.location || "",
+            registrationDate
+          ];
+          bookSheet.getRange(i + 1, 1, 1, updatedRow.length).setValues([updatedRow]);
+        }
         console.log(`書籍情報を更新しました: ${bookData.bookId}`);
         return true;
       }
