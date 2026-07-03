@@ -878,7 +878,11 @@ function findRentalRecords(bookId) {
   logs.push(`貸出記録検索開始: 書籍ID=${bookId}`);
   console.log(`貸出記録検索開始: 書籍ID=${bookId}`);
   Logger.log(`デバッグ\t貸出記録検索開始: 書籍ID=${bookId}`);
-  
+
+  // 入力が妥当なISBNの場合は、管理番号(ISBN-001等)で記録された行もヒットさせる。
+  // 貸出時はISBN→在庫のある管理番号に解決して記録するため、返却時も逆方向の解決が必要
+  const normalizedInputIsbn = isValidIsbn_(bookId) ? normalizeIsbn_(bookId) : "";
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const lendingSheet = ss.getSheetByName("貸出記録");
@@ -917,7 +921,11 @@ function findRentalRecords(bookId) {
       // 詳細なデバッグ情報を追加
       const rowBookIdLower = rowBookId.toLowerCase();
       const bookIdLower = bookId.trim().toLowerCase();
-      const isIdMatch = rowBookIdLower === bookIdLower;
+      // ①完全一致(管理番号や旧形式のIDをそのまま入力した場合)
+      // ②ISBN一致(記録が管理番号の場合、複製番号サフィックス -nnn を除いて比較)
+      const rowIsbnPart = normalizeIsbn_(rowBookId.replace(/-\d+$/, ""));
+      const isIdMatch = rowBookIdLower === bookIdLower ||
+        (normalizedInputIsbn !== "" && rowIsbnPart === normalizedInputIsbn);
       Logger.log(`デバッグ\t行 ${i + 1} 詳細比較: ID一致=${isIdMatch}(${rowBookIdLower}=${bookIdLower})`);
       
       // 大文字小文字を区別せずに比較
