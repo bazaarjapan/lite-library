@@ -2960,6 +2960,11 @@ function ensureUserStatusColumn_() {
   if (!userSheet || userSheet.getLastRow() === 0) return;
 
   const statusColNumber = SCHEMA["利用者DB"].col.状態 + 1;
+  // グリッドが6列ちょうどに切り詰められたシートでは getRange(1, 7) が
+  // 範囲外エラーになるため、先に物理列を追加する
+  if (userSheet.getMaxColumns() < statusColNumber) {
+    userSheet.insertColumnsAfter(userSheet.getMaxColumns(), statusColNumber - userSheet.getMaxColumns());
+  }
   const headerCell = userSheet.getRange(1, statusColNumber);
   const current = headerCell.getValue();
   if (current === "" || current === null) {
