@@ -13,8 +13,9 @@ const SCHEMA = {
     col: { 管理番号: 0, ISBN: 1, 書籍名: 2, 著者名: 3, 出版社: 4, 備考: 5, 状態: 6 }
   },
   "利用者DB": {
-    headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日"],
-    col: { 利用者ID: 0, 氏名: 1, メールアドレス: 2, 電話番号: 3, 住所: 4, 登録日: 5 }
+    // 状態: 空または「有効」= 有効 / 「削除済み」= 論理削除(行は残し、貸出記録との参照を守る)
+    headers: ["利用者ID", "氏名", "メールアドレス", "電話番号", "住所", "登録日", "状態"],
+    col: { 利用者ID: 0, 氏名: 1, メールアドレス: 2, 電話番号: 3, 住所: 4, 登録日: 5, 状態: 6 }
   },
   "貸出記録": {
     headers: ["書籍ID", "書籍名", "利用者ID", "利用者名", "貸出日時", "返却予定日", "返却状況", "返却日時"],
@@ -501,7 +502,12 @@ function getUserInfo(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, 2).getValues()[0];
+      const row = userSheet.getRange(rowNumber, 1, 1, SCHEMA["利用者DB"].headers.length).getValues()[0];
+      // 論理削除された利用者は「見つからない」扱いにする
+      if ((row[SCHEMA["利用者DB"].col.状態] || "").toString().trim() === "削除済み") {
+        console.warn(`利用者ID ${userId} は削除済みです。`);
+        return null;
+      }
       const userName = row[1] || "氏名不明";
       console.log(`利用者情報取得成功: ${userName}`);
       // クライアントは氏名しか使わないため、メールアドレス等のPIIは返さない
@@ -1686,8 +1692,14 @@ function getUserDetails(userId) {
     // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
     const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
     if (rowNumber !== -1) {
-      const row = userSheet.getRange(rowNumber, 1, 1, 6).getValues()[0];
+      const row = userSheet.getRange(rowNumber, 1, 1, SCHEMA["利用者DB"].headers.length).getValues()[0];
       const rowUserId = row[0] ? row[0].toString().trim() : "";
+
+      // 論理削除された利用者は「見つからない」扱いにする(PIIも返さない)
+      if ((row[SCHEMA["利用者DB"].col.状態] || "").toString().trim() === "削除済み") {
+        console.warn(`getUserDetails: 利用者ID ${userId} は削除済みです。`);
+        return null;
+      }
 
       // 日付を文字列に変換して返す
       const registrationDate = row[5] || null;
@@ -1896,14 +1908,16 @@ function deleteUser_(userId) {
     
     const data = userSheet.getDataRange().getValues();
     const userIdColIndex = 0; // A列
-    
+
     // ヘッダー行を除いて検索
     for (let i = 1; i < data.length; i++) {
       const rowUserId = data[i][userIdColIndex] ? data[i][userIdColIndex].toString().trim() : "";
       if (rowUserId.toLowerCase() === userId.trim().toLowerCase()) {
-        // 行を削除
-        userSheet.deleteRow(i + 1);
-        console.log(`利用者を削除しました: ${userId}`);
+        // 論理削除: 行は残して状態を「削除済み」にする。
+        // 過去の貸出記録との参照を守り、同じ利用者IDの再発行も防ぐ
+        ensureUserStatusColumn_();
+        userSheet.getRange(i + 1, SCHEMA["利用者DB"].col.状態 + 1).setValue("削除済み");
+        console.log(`利用者を論理削除しました: ${userId}`);
         return true;
       }
     }
@@ -2062,6 +2076,10 @@ function setupLibrarySystem() {
       sheet.setFrozenRows(1);
       sheet.autoResizeColumns(1, def.headers.length);
     });
+
+    // 既存の利用者DBに「状態」列(論理削除用・末尾追加)がなければヘッダーだけ補完する
+    // (データには触れない。空=有効として扱われる)
+    ensureUserStatusColumn_();
 
     // 設定DBは ensureSettingsSheet_ がデフォルト設定込みで初期化する
     // (シートが存在しない場合と、空タブとして手動作成済みの場合の両方に対応。
@@ -2228,8 +2246,10 @@ function analyzeBookStatusConsistency_() {
         if (!managementNumber) continue;
         const idKey = managementNumber.toString().trim().toLowerCase();
         knownIds.add(idKey);
-        const expected = unreturnedCounts.has(idKey) ? "貸出中" : "在庫";
         const actual = (bookData[i][SCHEMA["書籍DB"].col.状態] || "在庫").toString().trim();
+        // 論理削除(廃棄)の本は未返却がない限り対象外(修復で在庫に戻さない)
+        if (actual === "廃棄" && !unreturnedCounts.has(idKey)) continue;
+        const expected = unreturnedCounts.has(idKey) ? "貸出中" : "在庫";
         if (actual !== expected) {
           mismatches.push({
             rowNumber: i + 1,
@@ -2926,6 +2946,25 @@ ${libraryName}管理システム
 // 設定DBシートを直接編集した場合は最大TTL秒だけ古い値が使われる。
 const SETTINGS_CACHE_KEY = "librarySettings_v1";
 const SETTINGS_CACHE_TTL_SECONDS = 300;
+
+/**
+ * 利用者DBに「状態」列(論理削除用)のヘッダーがなければ補完する関数(冪等)。
+ * 末尾列の追加のみでデータには触れない。既に別のヘッダーが入っている場合は
+ * 上書きせず、validateSchema_ の検出に委ねる。
+ */
+function ensureUserStatusColumn_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const userSheet = ss.getSheetByName("利用者DB");
+  if (!userSheet || userSheet.getLastRow() === 0) return;
+
+  const statusColNumber = SCHEMA["利用者DB"].col.状態 + 1;
+  const headerCell = userSheet.getRange(1, statusColNumber);
+  const current = headerCell.getValue();
+  if (current === "" || current === null) {
+    headerCell.setValue("状態");
+    headerCell.setFontWeight("bold").setBackground("#f3f3f3");
+  }
+}
 
 /**
  * 設定DBシートを取得する(存在しない・空の場合はヘッダーとデフォルト設定を投入して作成)。
@@ -4022,7 +4061,7 @@ function getBookInventory() {
           title: title || "タイトル不明",
           author: author,
           publisher: publisher,
-          status: dbStatus === "貸出中" ? "貸出中" : (lendingInfo ? "貸出中" : "在庫"),
+          status: dbStatus === "廃棄" ? "廃棄" : (dbStatus === "貸出中" || lendingInfo ? "貸出中" : "在庫"),
           borrowerName: lendingInfo ? lendingInfo.borrowerName : null,
           borrowerId: lendingInfo ? lendingInfo.borrowerId : null,
           lendingDate: lendingInfo ? lendingInfo.lendingDate : null,
@@ -4295,20 +4334,25 @@ function deleteBook_(bookId) {
       throw new Error("書籍DBシートが見つかりません。");
     }
     
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。先に管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+    }
+
     const data = bookSheet.getDataRange().getValues();
     const bookIdColIndex = 0; // A列
-    
+
     // ヘッダー行を除いて検索
     for (let i = 1; i < data.length; i++) {
       const rowBookId = data[i][bookIdColIndex] ? data[i][bookIdColIndex].toString().trim() : "";
       if (rowBookId.toLowerCase() === bookId.trim().toLowerCase()) {
-        // 行を削除
-        bookSheet.deleteRow(i + 1);
-        console.log(`書籍を削除しました: ${bookId}`);
+        // 論理削除: 行は残して状態を「廃棄」にする。
+        // 過去の貸出記録との参照を守る(在庫扱いされないため貸出対象にはならない)
+        bookSheet.getRange(i + 1, SCHEMA["書籍DB"].col.状態 + 1).setValue("廃棄");
+        console.log(`書籍を論理削除(廃棄)しました: ${bookId}`);
         return true;
       }
     }
-    
+
     throw new Error("指定された書籍IDが見つかりません。");
   } catch (error) {
     console.error(`書籍の削除中にエラーが発生しました: ${error}`);
