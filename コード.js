@@ -2001,7 +2001,7 @@ function getAllUserIds_() {
  * スプレッドシートが開かれたときにカスタムメニューを追加する関数
  */
 function onOpen() {
-  SpreadsheetApp.getUi()
+  const menu = SpreadsheetApp.getUi()
       .createMenu('管理メニュー')
       .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
       .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
@@ -2014,9 +2014,29 @@ function onOpen() {
       .addItem('貸出状況レポート作成', 'generateLendingReport')
       .addItem('返却済データのバックアップ', 'showBackupDialog')
       .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
-      .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu')
-      .addItem('【開発用】データ初期化+ダミーデータ投入', 'seedDummyDataFromMenu')
-      .addToUi();
+      .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu');
+
+  // 破壊的な開発用メニューは、設定DBの operationMode が development の
+  // ときだけ表示する(本番データの誤リセット防止。設定読み取りに失敗しても
+  // メニュー全体は壊さない)
+  if (isDevelopmentMode_()) {
+    menu.addItem('【開発用】データ初期化+ダミーデータ投入', 'seedDummyDataFromMenu');
+  }
+  menu.addToUi();
+}
+
+/**
+ * 設定DBの operationMode が development かどうかを返す関数
+ * (読み取りに失敗した場合は安全側に倒して false)
+ * @return {boolean} 開発モードなら true
+ */
+function isDevelopmentMode_() {
+  try {
+    return getLibrarySettings().operationMode === "development";
+  } catch (error) {
+    console.warn(`運用モードの取得に失敗しました(開発モード無効として扱います): ${error}`);
+    return false;
+  }
 }
 
 /**
@@ -3696,6 +3716,17 @@ function removeArchiveTriggerFromMenu() {
  */
 function seedDummyDataFromMenu() {
   const ui = SpreadsheetApp.getUi();
+
+  // メニュー表示ガードと二重に、実行時にも開発モードを確認する
+  if (!isDevelopmentMode_()) {
+    ui.alert(
+      '実行できません',
+      'この機能は開発モード専用です。設定DBの operationMode を development にすると使用できます。',
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
   const confirm = ui.alert(
     '【開発用】データ初期化+ダミーデータ投入',
     '書籍DB・利用者DB・貸出記録の既存データをすべて削除し、ダミーデータに置き換えます。\n' +
