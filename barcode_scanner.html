@@ -109,7 +109,8 @@
       closeActiveSession('detected');
       handleScan(session, data.code);
     } else if (data.type === 'error') {
-      closeActiveSession('error');
+      // ポップアップは閉じない(中に理由と再試行ボタンが表示される)。
+      // 即クローズすると「開いてもすぐ閉じる」ように見えて原因が分からないため
       setMessageSafe(data.message || 'カメラを起動できませんでした。手入力してください。');
     } else if (data.type === 'ready') {
       setMessageSafe(`${session.context.label}をカメラに向けてください。`);
@@ -133,7 +134,8 @@
       title: context.title,
       label: context.label,
       facingMode: context.facingMode || 'environment',
-      readers: context.readers
+      readers: context.readers,
+      quaggaUrl: QUAGGA_URL
     };
     const html = buildPopupHtml(popupConfig);
     const objectUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
@@ -254,6 +256,7 @@
     <div>
       <button type="button" id="zoom-out" style="display:none">−</button>
       <button type="button" id="zoom-in" style="display:none">＋</button>
+      <button type="button" id="retry" style="display:none">再試行</button>
       <button type="button" id="switch-camera">切替</button>
       <button type="button" id="close-window">閉じる</button>
     </div>
@@ -292,6 +295,38 @@
       if (el) el.textContent = message;
     }
 
+    // エラーをこのウィンドウ内に表示し、再試行ボタンを出す(ウィンドウは閉じない)。
+    // 親ページにも通知してメッセージを表示させる
+    function showError(message) {
+      setMessage(message);
+      var retryButton = document.getElementById('retry');
+      if (retryButton) retryButton.style.display = '';
+      post('error', { message: message });
+    }
+
+    // Quaggaライブラリを動的に(再)読込してから起動をやり直す。
+    // 初回<script>のCDN読込が失敗した場合、再試行のたびにここで読み直す
+    function loadQuaggaThenRestart() {
+      setMessage('読み取りライブラリを読み込んでいます...');
+      var previous = document.getElementById('quagga-reload');
+      if (previous) previous.remove();
+      var script = document.createElement('script');
+      script.id = 'quagga-reload';
+      script.src = config.quaggaUrl;
+      script.onload = function() {
+        if (window.Quagga) {
+          start();
+        } else {
+          // 読み込めたのに定義されない異常ケース(無限再読込ループを防ぐ)
+          showError('バーコード読み取りライブラリを初期化できませんでした。ウィンドウを閉じて手入力してください。');
+        }
+      };
+      script.onerror = function() {
+        showError('バーコード読み取りライブラリを読み込めませんでした。通信状態を確認して「再試行」を押してください。');
+      };
+      document.body.appendChild(script);
+    }
+
     function cleanup() {
       running = false;
       if (window.Quagga) {
@@ -312,12 +347,16 @@
 
     function start() {
       cleanup();
+      var retryButton = document.getElementById('retry');
+      if (retryButton) retryButton.style.display = 'none';
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        post('error', { message: 'このブラウザではカメラを使用できません。手入力してください。' });
+        showError('このブラウザではカメラを使用できません。ウィンドウを閉じて手入力してください。');
         return;
       }
       if (!window.Quagga) {
-        post('error', { message: 'バーコード読み取りライブラリを読み込めませんでした。通信状態を確認してください。' });
+        // 初回の<script>読込が失敗している。再試行が成立するよう、ここで
+        // ライブラリを動的に再読込してから start() をやり直す
+        loadQuaggaThenRestart();
         return;
       }
 
@@ -351,9 +390,11 @@
         locate: true
       }, function(err) {
         if (err) {
-          var message = err && (err.message || err.name) ? (err.name || 'Error') + ': ' + (err.message || '') : 'カメラを起動できませんでした。';
-          post('error', { message: 'カメラを起動できませんでした。ブラウザのカメラ許可を確認するか、手入力してください。' });
-          setMessage(message);
+          // getUserMedia成功後にinitが失敗したケースでは映像トラックが残るため、
+          // ウィンドウを開いたままにする前に必ずカメラを解放する
+          cleanup();
+          var detail = err && (err.message || err.name) ? '(' + (err.name || 'Error') + ': ' + (err.message || '') + ')' : '';
+          showError('カメラを起動できませんでした。ブラウザのカメラ許可を確認して「再試行」を押すか、閉じて手入力してください。' + detail);
           return;
         }
         running = true;
@@ -423,6 +464,9 @@
 
     document.getElementById('switch-camera').addEventListener('click', function() {
       facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      start();
+    });
+    document.getElementById('retry').addEventListener('click', function() {
       start();
     });
     document.getElementById('close-window').addEventListener('click', function() {
