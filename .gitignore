@@ -1,2 +1,6 @@
 node_modules/
 .clasprc.json
+
+# 環境固有・個人設定(ローカルには残す)
+CLAUDE.md
+.clasp.json
