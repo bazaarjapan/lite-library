@@ -900,7 +900,24 @@ function cancelReservation_(reservationId) {
     sheet.getRange(rowNum, col.処理日時 + 1).setValue(new Date());
     const title = rowValues[col.書籍名] ? rowValues[col.書籍名].toString() : id;
     console.log(`予約取消: ${id} 「${title}」`);
-    return { success: true, message: `「${title}」の予約を取り消しました。` };
+    let message = `「${title}」の予約を取り消しました。`;
+
+    // 取り置き中の取消なら、空いたコピーを同じ本の次の予約者(最古の予約中)に
+    // 割り当てる。これをしないと次の返却が起きるまでキューが停滞し、
+    // 新規予約も「在庫があります」と拒否され続ける
+    if (rowValues[col.状態] === "取り置き中") {
+      const bookKey = rowValues[col.書籍ID] ? rowValues[col.書籍ID].toString().trim() : "";
+      const nextReservation = loadActiveReservations_().actives.find(r =>
+        r.status === "予約中" && r.bookKey === bookKey
+      );
+      if (nextReservation) {
+        sheet.getRange(nextReservation.rowNumber, col.状態 + 1).setValue("取り置き中");
+        sendReservationHoldEmail_(nextReservation);
+        message += ` 空いたコピーを次の予約者 ${nextReservation.userName} さん(ID: ${nextReservation.userId})の取り置きに引き継ぎました。`;
+        console.log(`取り置きを引き継ぎ: ${nextReservation.reservationId}`);
+      }
+    }
+    return { success: true, message: message };
   } catch (error) {
     console.error(`予約取消中にエラーが発生しました: ${error}`);
     return { success: false, message: `予約取消に失敗しました: ${error.message}` };
@@ -930,6 +947,44 @@ function getActiveReservations() {
   } catch (error) {
     console.error(`予約一覧の取得中にエラーが発生しました: ${error}`);
     return { success: false, message: `予約一覧の取得に失敗しました: ${error.message}`, reservations: [] };
+  }
+}
+
+/**
+ * 予約者へ取り置き案内メールを送るベストエフォートの補助関数。
+ * enableEmail=false・メールアドレス未登録・クォータ枯渇・送信失敗はすべて黙ってスキップし、
+ * 呼び出し元の処理は失敗にしない。
+ * @param {object} reservation - loadActiveReservations_ の予約オブジェクト
+ */
+function sendReservationHoldEmail_(reservation) {
+  try {
+    let settings = {};
+    try {
+      settings = getLibrarySettings();
+    } catch (e) {
+      settings = {};
+    }
+    if (settings.enableEmail === false) return;
+    const userSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("利用者DB");
+    if (!userSheet) return;
+    const userRowNum = findRowByValue_(userSheet, 1, reservation.userId);
+    if (userRowNum === -1) return;
+    const emailValue = userSheet.getRange(userRowNum, 3).getValue();
+    const email = emailValue ? emailValue.toString().trim() : "";
+    if (!email || MailApp.getRemainingDailyQuota() <= 0) return;
+    const libraryName = settings.libraryName || "図書館";
+    MailApp.sendEmail({
+      to: email,
+      subject: `【${libraryName}】ご予約の本のご用意ができました`,
+      body: `${reservation.userName} 様\n\n` +
+        `${libraryName}をご利用いただきありがとうございます。\n` +
+        `ご予約中の以下の本のご用意ができました。取り置きしていますので、お早めにお越しください。\n\n` +
+        `書籍名: ${reservation.bookTitle}\n\n` +
+        `${libraryName}`
+    });
+    console.log(`予約取り置きメール送信: ${reservation.userId} (${email}) - ${reservation.bookTitle}`);
+  } catch (error) {
+    console.error(`予約取り置きメールの送信に失敗しました: ${error}`);
   }
 }
 
