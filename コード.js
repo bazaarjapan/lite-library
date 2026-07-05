@@ -802,7 +802,20 @@ function createReservation_(bookId, userId) {
     const sheet = ensureReservationSheet_();
     const actives = loadActiveReservations_().actives;
 
-    // 在庫チェック: 「在庫のコピー数 > 取り置き済み予約数」の場合のみ貸出を案内する。
+    // 貸出記録の未返却を正とする(書籍DBのG列が更新漏れで在庫のままでも貸出中として扱う。
+    // 貸出処理の activeLoanIds・蔵書検索の dueByBookId と同じ扱い)
+    const activeLoanIds = new Set();
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    if (lendingSheet) {
+      const lendingData = lendingSheet.getDataRange().getValues();
+      for (let i = 1; i < lendingData.length; i++) {
+        if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
+          activeLoanIds.add(lendingData[i][0].toString().trim());
+        }
+      }
+    }
+
+    // 在庫チェック: 「貸出可能なコピー数 > 取り置き済み予約数」の場合のみ貸出を案内する。
     // 取り置き中の予約は書籍DB上は在庫のコピーを1冊占有しているため、
     // 見かけの在庫から差し引かないと、全コピーが取り置き済みのタイトルに
     // 新しく予約で並べなくなる(貸出も予約ゲートに弾かれ、詰む)。
@@ -815,12 +828,14 @@ function createReservation_(bookId, userId) {
     if (isbn) {
       const copyRows = findRowsByNormalizedIsbn_(bookSheet, 2, isbn);
       for (const rowNum of copyRows) {
-        if (normalizeBookStatus_(bookSheet.getRange(rowNum, 7).getValue()) === "在庫") {
+        const copyValues = bookSheet.getRange(rowNum, 1, 1, 7).getValues()[0];
+        const copyManagementNumber = copyValues[0] ? copyValues[0].toString().trim() : "";
+        if (normalizeBookStatus_(copyValues[6]) === "在庫" && !activeLoanIds.has(copyManagementNumber)) {
           availableCount++;
         }
       }
     } else {
-      availableCount = normalizeBookStatus_(bookValues[6]) === "在庫" ? 1 : 0;
+      availableCount = (normalizeBookStatus_(bookValues[6]) === "在庫" && !activeLoanIds.has(managementNumber)) ? 1 : 0;
     }
     const heldCount = actives.filter(r => r.bookKey === reservationKey && r.status === "取り置き中").length;
     if (availableCount > heldCount) {
@@ -1920,23 +1935,41 @@ function processBulkLending_(bulkData) {
         return;
       }
 
-      // 予約チェック: この本に有効な予約があれば、借りる本人の予約を優先して照合する。
-      // 複本が別々の利用者に取り置きされている場合でも、本人の予約(取り置き中/予約中)が
-      // あればそれを消費して貸出を許可する(最古の予約者との比較だけだと、2番目に
-      // 取り置きされた利用者が先に来店したとき正当な貸出を拒否してしまう)。
-      // 本人の予約がなければ最先頭の予約者名を示してスキップする。
+      // 予約チェック: この本に有効な予約があれば、消費できる予約を厳密に判定する。
+      // (1) 本人の「取り置き中」= コピーが本人に割当済み → 常に貸出可
+      // (2) 本人の「予約中」= 予約中キューの先頭で、かつ取り置き分を除いた
+      //     余剰の在庫コピーがある場合のみ貸出可(他人に取り置かれたコピーの横取り防止)
+      // それ以外は最先頭の予約者名を示してスキップする。
       // 成立した予約はプールから消費し、複本の同時貸出でも他の予約を追い越せないようにする
       const matchingReservations = findReservationsForBook_(reservationState.actives, lendId, book.isbn || "");
       if (matchingReservations.length > 0) {
-        const ownReservation = matchingReservations.find(r => r.userId.toLowerCase() === normalizedUserId);
-        if (!ownReservation) {
+        let consumable = matchingReservations.find(r =>
+          r.status === "取り置き中" && r.userId.toLowerCase() === normalizedUserId
+        ) || null;
+        if (!consumable) {
+          const pendingQueue = matchingReservations.filter(r => r.status === "予約中");
+          const heldCount = matchingReservations.length - pendingQueue.length;
+          if (pendingQueue.length > 0 && pendingQueue[0].userId.toLowerCase() === normalizedUserId) {
+            // 現時点で貸出可能なコピー数(このリクエストで確定済みの分は除外済み)
+            const copies = (book.isbn && copiesByIsbn.has(book.isbn))
+              ? copiesByIsbn.get(book.isbn)
+              : [{ managementNumber: lendId, entry: book }];
+            const availableCopies = copies.filter(copy =>
+              copy.entry.status === "在庫" && !activeLoanIds.has(copy.managementNumber)
+            ).length;
+            if (availableCopies > heldCount) {
+              consumable = pendingQueue[0];
+            }
+          }
+        }
+        if (!consumable) {
           errorCount++;
           errorMessages.push(`${lendId}（予約あり: ${matchingReservations[0].userName} さんが予約中）`);
-          console.warn(`貸出スキップ: 書籍ID ${lendId} は他の利用者(${matchingReservations[0].userId})が予約中です。`);
+          console.warn(`貸出スキップ: 書籍ID ${lendId} は他の利用者の予約(先頭: ${matchingReservations[0].userId})が優先されます。`);
           return;
         }
-        reservationsToFulfill.push(ownReservation);
-        reservationState.actives = reservationState.actives.filter(r => r !== ownReservation);
+        reservationsToFulfill.push(consumable);
+        reservationState.actives = reservationState.actives.filter(r => r !== consumable);
       }
 
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
