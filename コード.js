@@ -51,6 +51,10 @@ function doGet(e) {
         page = 'rental_books_finder';
         title = '貸出書籍検索システム';
         break;
+      case 'search':
+        page = 'book_search';
+        title = '蔵書検索';
+        break;
       case 'user_returns':
         page = 'user_returns';
         title = '利用者別返却システム';
@@ -419,6 +423,95 @@ function getAvailableBook(isbn) {
  * @param {string} bookId - 書籍ID（管理番号またはISBN）
  * @return {object|null} 書籍情報オブジェクト {title: string, managementNumber: string, isbn: string, status: string} または null
  */
+/**
+ * 蔵書を横断検索する関数(読み取り専用)。
+ * 管理番号・ISBN・書籍名・著者名・出版社の部分一致(大文字小文字無視)で検索する。
+ * ISBNはハイフン有無を正規化して照合し、廃棄済みの本は結果から除外する。
+ * 貸出中の本には貸出記録(未返却)の返却予定日を付与する。
+ * @param {string} query - 検索語
+ * @return {object} {success: boolean, message: string, results: Array<object>}
+ *                  results要素: {managementNumber, isbn, title, author, publisher, status, dueDate(ISO文字列または空)}
+ */
+function searchCatalog(query) {
+  const SEARCH_LIMIT = 100;
+  try {
+    const q = query ? query.toString().trim() : "";
+    if (!q) {
+      return { success: false, message: "検索語を入力してください。", results: [] };
+    }
+    const qLower = q.toLowerCase();
+    const qIsbn = isValidIsbn_(q) ? normalizeIsbn_(q) : "";
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const bookSheet = ss.getSheetByName("書籍DB");
+    if (!bookSheet) {
+      throw new Error("書籍DBシートが見つかりません。");
+    }
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
+    }
+
+    // 貸出中の返却予定日: 貸出記録の未返却行から 管理番号→返却予定日 を引けるようにする
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    const dueByBookId = new Map();
+    if (lendingSheet) {
+      const lendingData = lendingSheet.getDataRange().getValues();
+      for (let i = 1; i < lendingData.length; i++) {
+        if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
+          dueByBookId.set(lendingData[i][0].toString().trim(), lendingData[i][5]);
+        }
+      }
+    }
+
+    // 検索は全文一致条件が自由(部分一致・複数列)のため一括読み込みで走査する
+    // (per-transactionの単一ID検索ではないので TextFinder のfast pathは使えない)
+    const data = bookSheet.getDataRange().getValues();
+    const results = [];
+    let truncated = false;
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const managementNumber = row[0] ? row[0].toString().trim() : "";
+      if (!managementNumber) continue;
+      const status = row[6] ? row[6].toString().trim() : "在庫";
+      if (status === "廃棄") continue; // 論理削除済みは蔵書として扱わない
+
+      const isbn = row[1] ? row[1].toString().trim() : "";
+      const haystack = [managementNumber, isbn, row[2], row[3], row[4]]
+        .map(v => (v === null || v === undefined) ? "" : v.toString())
+        .join("\n")
+        .toLowerCase();
+      const isbnNormalized = normalizeIsbn_(isbn);
+      const hit = haystack.indexOf(qLower) !== -1 ||
+        (qIsbn !== "" && isbnNormalized !== "" && isbnNormalized === qIsbn);
+      if (!hit) continue;
+
+      if (results.length >= SEARCH_LIMIT) {
+        truncated = true;
+        break;
+      }
+      const dueDateValue = dueByBookId.get(managementNumber);
+      results.push({
+        managementNumber: managementNumber,
+        isbn: isbn,
+        title: row[2] ? row[2].toString() : "",
+        author: row[3] ? row[3].toString() : "",
+        publisher: row[4] ? row[4].toString() : "",
+        // G列が更新漏れでも未返却の貸出記録があれば貸出中として表示する
+        status: dueByBookId.has(managementNumber) ? "貸出中" : status,
+        dueDate: dueDateValue ? toIsoString_(dueDateValue) : ""
+      });
+    }
+
+    const message = results.length === 0
+      ? `「${q}」に一致する蔵書は見つかりませんでした。`
+      : `${results.length}件見つかりました。` + (truncated ? `(該当が多いため先頭${SEARCH_LIMIT}件のみ表示。検索語を絞り込んでください)` : "");
+    return { success: true, message: message, results: results };
+  } catch (error) {
+    console.error(`蔵書検索中にエラーが発生しました: ${error}`);
+    return { success: false, message: `蔵書検索に失敗しました: ${error.message}`, results: [] };
+  }
+}
+
 function getBookDetails(bookId) {
   if (!bookId) {
     console.error("書籍IDが指定されていません。");

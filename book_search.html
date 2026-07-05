@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <title>蔵書検索</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <?!= includeHtml_('common_styles'); ?>
+    <style>
+      /* ページ固有: 結果テーブルの書籍名列は折り返しを許可する */
+      #results-table td.title-cell { white-space: normal; min-width: 12rem; }
+      #empty-state { display: none; }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <a href="#" class="app-header-back js-menu-link">← メニュー</a>
+      <span class="app-header-title"><span class="group-dot lending"></span>蔵書検索</span>
+    </header>
+
+    <main class="app-main wide">
+      <div class="card">
+        <h2 class="card-title">検索</h2>
+        <div class="field">
+          <label for="search-query">書名・著者名・ISBN・管理番号</label>
+          <div class="input-row">
+            <input type="text" id="search-query" placeholder="部分一致で検索できます">
+            <button id="scan-isbn-button">📷 スキャン</button>
+            <button id="search-button" class="btn-primary">検索</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">検索結果</h2>
+        <div class="table-wrap">
+          <table id="results-table" style="display: none;">
+            <thead>
+              <tr>
+                <th>書籍名</th>
+                <th>著者</th>
+                <th>状態</th>
+                <th>返却予定日</th>
+                <th>管理番号</th>
+                <th>ISBN</th>
+              </tr>
+            </thead>
+            <tbody id="results-body"></tbody>
+          </table>
+        </div>
+        <p id="empty-state" class="loading">検索語を入力すると、蔵書の在庫状況を横断検索できます。</p>
+      </div>
+
+      <p id="message"></p>
+    </main>
+
+    <script>
+      function setMessage(msg) {
+        document.getElementById('message').innerText = msg;
+      }
+
+      function formatDate(isoStr) {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        if (isNaN(d)) return '';
+        return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+      }
+
+      function statusBadge(status) {
+        const span = document.createElement('span');
+        span.className = 'badge';
+        span.textContent = status;
+        if (status === '在庫') span.classList.add('badge-ok');
+        else if (status === '貸出中') span.classList.add('badge-warn');
+        else span.classList.add('badge-muted');
+        return span;
+      }
+
+      function renderResults(results) {
+        const table = document.getElementById('results-table');
+        const body = document.getElementById('results-body');
+        const empty = document.getElementById('empty-state');
+        body.innerHTML = '';
+
+        if (!results || results.length === 0) {
+          table.style.display = 'none';
+          empty.style.display = 'block';
+          empty.textContent = '該当する蔵書はありませんでした。検索語を変えてお試しください。';
+          return;
+        }
+
+        empty.style.display = 'none';
+        table.style.display = 'table';
+        results.forEach(item => {
+          const row = document.createElement('tr');
+
+          const titleCell = document.createElement('td');
+          titleCell.className = 'title-cell';
+          titleCell.textContent = item.title || '(書名なし)';
+          row.appendChild(titleCell);
+
+          const authorCell = document.createElement('td');
+          authorCell.textContent = item.author || '';
+          row.appendChild(authorCell);
+
+          const statusCell = document.createElement('td');
+          statusCell.appendChild(statusBadge(item.status || ''));
+          row.appendChild(statusCell);
+
+          const dueCell = document.createElement('td');
+          dueCell.textContent = formatDate(item.dueDate);
+          row.appendChild(dueCell);
+
+          const mnCell = document.createElement('td');
+          mnCell.className = 'mono';
+          mnCell.textContent = item.managementNumber || '';
+          row.appendChild(mnCell);
+
+          const isbnCell = document.createElement('td');
+          isbnCell.className = 'mono';
+          isbnCell.textContent = item.isbn || '';
+          row.appendChild(isbnCell);
+
+          body.appendChild(row);
+        });
+      }
+
+      function runSearch(queryFromScan) {
+        if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.close();
+        const input = document.getElementById('search-query');
+        if (queryFromScan) input.value = queryFromScan;
+        const query = input.value.trim();
+        if (!query) {
+          setMessage('検索語を入力してください。');
+          return;
+        }
+
+        setMessage('検索中...');
+        document.getElementById('search-button').disabled = true;
+        google.script.run
+          .withSuccessHandler(response => {
+            document.getElementById('search-button').disabled = false;
+            if (response && response.success) {
+              renderResults(response.results);
+              setMessage(response.message);
+            } else {
+              renderResults([]);
+              setMessage((response && response.message) || '検索に失敗しました。');
+            }
+          })
+          .withFailureHandler(error => {
+            document.getElementById('search-button').disabled = false;
+            setMessage('検索エラー: ' + error.message);
+            console.error('蔵書検索エラー:', error);
+          })
+          .searchCatalog(query);
+      }
+
+      window.onload = function() {
+        document.getElementById('empty-state').style.display = 'block';
+        document.getElementById('search-button').addEventListener('click', () => runSearch());
+        document.getElementById('search-query').addEventListener('keypress', event => {
+          if (event.key === 'Enter') runSearch();
+        });
+        document.getElementById('scan-isbn-button').addEventListener('click', () => {
+          if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.open('interactive-search');
+        });
+        document.getElementById('search-query').focus();
+      };
+    </script>
+    <?!= includeHtml_('barcode_scanner'); ?>
+    <script>
+      LiteLibraryBarcodeScanner.configure({
+        contexts: {
+          'interactive-search': {
+            inputFieldId: 'search-query',
+            label: 'ISBN・管理番号',
+            title: 'バーコードをスキャン',
+            readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'code_93_reader']
+          }
+        },
+        onOpen: function(context) {
+          setMessage(context.label + 'スキャン用ウィンドウを開いています...');
+        },
+        onScan: function(result) {
+          runSearch(result.code);
+        }
+      });
+    </script>
+    <script>
+      // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
+      (function() {
+        const url = '<?!= getWebAppUrl(); ?>';
+        document.querySelectorAll('.js-menu-link').forEach(el => { el.href = url; });
+      })();
+    </script>
+  </body>
+</html>
