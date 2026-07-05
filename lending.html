@@ -451,8 +451,9 @@
          google.script.run
           .withSuccessHandler(userInfo => {
             if (userInfo && userInfo.name) {
-              // 利用者情報が見つかった場合
-              currentUserId = userIdValue; // 利用者IDを確定
+              // 利用者情報が見つかった場合。サーバーが返す正規のIDで確定する
+              // (数字だけの入力でもプレフィックス付きの正規IDが貸出記録に入るように)
+              currentUserId = userInfo.userId || userIdValue;
               currentUserName = userInfo.name;
               document.getElementById('user-id').value = currentUserId; // 入力欄にも反映
               document.getElementById('user-name').value = currentUserName;
