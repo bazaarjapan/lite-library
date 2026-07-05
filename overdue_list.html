@@ -5,345 +5,49 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>延滞者リスト</title>
-  <?!= includeHtml_('responsive_scale'); ?>
+  <?!= includeHtml_('common_styles'); ?>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
-    
-    /* --- General Styles --- */
-    body, html {
-      margin: 0;
-      padding: 0;
-      font-family: 'Noto Sans JP', sans-serif;
-      height: 100%;
-      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
-      color: #2c3e50;
-      line-height: 1.7;
-      font-size: 48px;
-      -webkit-text-size-adjust: 100%;
-      position: relative;
-    }
-    
-    body::before {
-      content: "";
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-image: 
-        repeating-linear-gradient(
-          45deg,
-          transparent,
-          transparent 35px,
-          rgba(139, 111, 78, 0.03) 35px,
-          rgba(139, 111, 78, 0.03) 70px
-        );
-      pointer-events: none;
-      z-index: 1;
-    }
-    
-    .container {
-      position: relative;
-      z-index: 2;
-      margin: 0;
-      padding: 45px;
-      background-color: rgba(255, 255, 255, 0.95);
-      width: 100%;
-      min-height: 100vh;
-      box-sizing: border-box;
-      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
-    }
-    
-    h1 {
-      text-align: center;
-      color: #8b6f4e;
-      margin-top: 0;
-      margin-bottom: 90px;
-      border-bottom: 6px solid #d4af37;
-      padding-bottom: 60px;
-      font-size: 72px;
-      font-family: 'Noto Serif JP', serif;
-      font-weight: 700;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-      position: relative;
-    }
-    
-    h1::before {
-      content: "⏰";
-      display: block;
-      font-size: 48px;
-      margin-bottom: 20px;
-    }
-    
-    /* --- Filter Section --- */
-    .filter-section {
-      background: rgba(255, 255, 255, 0.7);
-      padding: 45px;
-      border-radius: 20px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      margin-bottom: 60px;
-    }
-    
+    /* ページ固有: フィルター行とサマリー表示 */
     .filter-row {
       display: flex;
-      gap: 30px;
-      align-items: center;
+      gap: 0.625rem;
+      align-items: flex-end;
       flex-wrap: wrap;
     }
-    
-    .filter-item {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-    
-    .filter-label {
-      font-weight: 700;
-      color: #8b6f4e;
-      font-size: 42px;
-    }
-    
-    select {
-      padding: 20px 30px;
-      border: 3px solid #d4af37;
-      border-radius: 15px;
-      font-size: 42px;
-      font-family: 'Noto Sans JP', sans-serif;
-      background: rgba(255, 255, 255, 0.9);
-      cursor: pointer;
-      min-width: 300px;
-    }
-    
-    /* --- Button Styles --- */
-    button {
-      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
-      color: white;
-      padding: 30px 60px;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      font-size: 48px;
-      font-weight: 700;
-      transition: all 0.3s ease;
-      margin-top: 30px;
-      font-family: 'Noto Sans JP', sans-serif;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-      min-height: 100px;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-    }
-    
-    button::before {
-      content: "";
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
-      transform: scale(0);
-      transition: transform 0.5s ease;
-    }
-    
-    button:hover::before {
-      transform: scale(1);
-    }
-    
-    button:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
-    }
-    
-    .search-button {
-      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
-    }
-    
-    .export-button {
-      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
-      margin-left: 20px;
-    }
-    
-    /* --- List Section --- */
-    .list-section {
-      background: rgba(255, 255, 255, 0.7);
-      padding: 45px;
-      border-radius: 20px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      margin-bottom: 60px;
-    }
-    
+    .filter-row .field { flex: 1 1 10rem; margin-bottom: 0; }
     .summary-box {
-      background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-      border: 3px solid #ffc107;
-      border-radius: 20px;
-      padding: 30px;
-      margin-bottom: 45px;
+      background: var(--danger-soft);
+      border: 1px solid #d9a49f;
+      border-radius: var(--radius);
+      padding: 0.625rem 0.75rem;
+      margin-bottom: 0.75rem;
       text-align: center;
-    }
-    
-    .summary-text {
-      font-size: 54px;
       font-weight: 700;
-      color: #856404;
+      color: var(--danger);
     }
-    
-    /* --- Table Styles --- */
-    .table-container {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: white;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-    
-    th {
-      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
-      color: white;
-      padding: 30px;
-      text-align: left;
-      font-weight: 700;
-      font-size: 42px;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-    
-    td {
-      padding: 25px 30px;
-      border-bottom: 2px solid #f0f0f0;
-      font-size: 42px;
-    }
-    
-    tr:hover {
-      background: rgba(212, 175, 55, 0.1);
-    }
-    
-    .overdue-days {
-      color: #dc3545;
-      font-weight: 700;
-    }
-    
-    .user-name {
-      font-weight: 700;
-      color: #2c3e50;
-    }
-    
-    .book-title {
-      color: #6c757d;
-    }
-    
-    /* --- Message Area --- */
-    #message {
-      margin-top: 45px;
-      font-weight: 700;
-      padding: 45px;
-      border-radius: 20px;
-      text-align: center;
-      font-size: 48px;
-      position: relative;
-      overflow: hidden;
-    }
-    
-    #message:not(:empty) {
-      display: block;
-      background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
-      border: 3px solid #b8dffc;
-      color: #0056b3;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    #message.error {
-      background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
-      color: #721c24;
-      border: 3px solid #f5c6cb;
-    }
-    
-    /* --- Empty State --- */
+    .book-title { color: var(--text-muted); }
     .empty-state {
       text-align: center;
-      padding: 120px 60px;
-      color: #6c757d;
+      padding: 2.5rem 1rem;
+      color: var(--text-muted);
     }
-    
-    .empty-icon {
-      font-size: 120px;
-      margin-bottom: 30px;
-      opacity: 0.5;
-    }
-    
-    .empty-text {
-      font-size: 48px;
-      font-weight: 700;
-    }
-    
-    /* --- Menu Button --- */
-    .menu-button {
-      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
-      color: white;
-      padding: 30px 60px;
-      font-size: 48px;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 15px;
-      margin: 30px 0;
-      transition: all 0.3s;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-      font-weight: 700;
-    }
-    
-    .menu-button:hover {
-      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-    }
-    
-    .menu-button-container {
-      text-align: center;
-      margin: 30px 0;
-      position: relative;
-      z-index: 2;
-    }
-    
-    /* --- Responsive Design --- */
-    @media (max-width: 600px) {
-      .container {
-        padding: 30px;
-      }
-      h1 {
-        font-size: 60px;
-      }
-      th, td {
-        font-size: 36px;
-        padding: 20px;
-      }
-      button {
-        font-size: 42px;
-        padding: 24px 48px;
-      }
-    }
+    .empty-icon { font-size: 2rem; opacity: 0.6; }
+    .empty-text { font-weight: 700; }
   </style>
 </head>
 <body>
-  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
-  <div class="container">
-    <h1>延滞者リスト</h1>
-    
+  <header class="app-header">
+    <a href="#" class="app-header-back js-menu-link">← メニュー</a>
+    <span class="app-header-title"><span class="group-dot report"></span>延滞者リスト</span>
+  </header>
+
+  <main class="app-main wide">
     <!-- フィルター部分 -->
-    <div class="filter-section">
+    <div class="card">
+      <h2 class="card-title">絞り込み</h2>
       <div class="filter-row">
-        <div class="filter-item">
-          <span class="filter-label">延滞日数：</span>
+        <div class="field">
+          <label for="overdue-filter">延滞日数</label>
           <select id="overdue-filter">
             <option value="all">すべて</option>
             <option value="7">7日以上</option>
@@ -351,18 +55,18 @@
             <option value="30">30日以上</option>
           </select>
         </div>
-        <button class="search-button" onclick="searchOverdue()">検索</button>
-        <button class="export-button" onclick="exportToSheet()">📊 レポート出力</button>
+        <button class="btn-primary" onclick="searchOverdue()">検索</button>
+        <button onclick="exportToSheet()">📊 レポート出力</button>
       </div>
     </div>
-    
+
     <!-- リスト表示部分 -->
-    <div class="list-section" id="list-section" style="display: none;">
+    <div class="card" id="list-section" style="display: none;">
       <div class="summary-box">
         <div class="summary-text" id="summary-text"></div>
       </div>
-      
-      <div class="table-container">
+
+      <div class="table-wrap">
         <table id="overdue-table">
           <thead>
             <tr>
@@ -378,27 +82,27 @@
           <tbody id="table-body"></tbody>
         </table>
       </div>
-      
+
       <div class="empty-state" id="empty-state" style="display: none;">
         <div class="empty-icon">✅</div>
         <div class="empty-text">延滞者はいません</div>
       </div>
     </div>
-    
+
     <div id="message"></div>
-  </div>
-  
+  </main>
+
   <script>
     // ページ読み込み時に自動で検索
     document.addEventListener('DOMContentLoaded', function() {
       searchOverdue();
     });
-    
+
     // 延滞者を検索する関数
     function searchOverdue() {
       const filter = document.getElementById('overdue-filter').value;
       showMessage('延滞者を検索中...', '');
-      
+
       google.script.run
         .withSuccessHandler(function(result) {
           displayOverdueList(result, filter);
@@ -409,23 +113,23 @@
         })
         .getOverdueList();
     }
-    
+
     // 延滞者リストを表示する関数
     function displayOverdueList(overdueList, filter) {
       const listSection = document.getElementById('list-section');
       const tableBody = document.getElementById('table-body');
       const emptyState = document.getElementById('empty-state');
       const summaryText = document.getElementById('summary-text');
-      
+
       // フィルタリング
       let filteredList = overdueList;
       if (filter !== 'all') {
         const days = parseInt(filter);
         filteredList = overdueList.filter(item => item.overdueDays >= days);
       }
-      
+
       listSection.style.display = 'block';
-      
+
       if (filteredList.length === 0) {
         tableBody.parentElement.style.display = 'none';
         emptyState.style.display = 'block';
@@ -433,34 +137,34 @@
       } else {
         tableBody.parentElement.style.display = 'table';
         emptyState.style.display = 'none';
-        
+
         // サマリー更新
         const totalCount = filteredList.length;
         const maxDays = Math.max(...filteredList.map(item => item.overdueDays));
         summaryText.textContent = `延滞件数: ${totalCount}件　最大延滞日数: ${maxDays}日`;
-        
+
         // テーブル更新
         tableBody.innerHTML = '';
         filteredList.forEach(item => {
           const row = document.createElement('tr');
           row.innerHTML = `
-            <td>${escapeHtml(item.userId)}</td>
+            <td class="mono">${escapeHtml(item.userId)}</td>
             <td class="user-name">${escapeHtml(item.userName)}</td>
-            <td>${escapeHtml(item.bookId)}</td>
+            <td class="mono">${escapeHtml(item.bookId)}</td>
             <td class="book-title">${escapeHtml(item.bookTitle)}</td>
             <td>${formatDate(item.lendingDate)}</td>
             <td>${formatDate(item.dueDate)}</td>
-            <td class="overdue-days">${item.overdueDays}日</td>
+            <td><span class="badge badge-danger">${item.overdueDays}日</span></td>
           `;
           tableBody.appendChild(row);
         });
       }
     }
-    
+
     // レポートを出力する関数
     function exportToSheet() {
       showMessage('レポートを作成中...', '');
-      
+
       google.script.run
         .withSuccessHandler(function(result) {
           showMessage('延滞者レポートを作成しました', '');
@@ -470,13 +174,13 @@
         })
         .createOverdueReport();
     }
-    
+
     // メッセージを表示する関数
     function showMessage(message, type) {
       const messageEl = document.getElementById('message');
       messageEl.textContent = message;
       messageEl.className = type;
-      
+
       if (type !== 'error' && message === '') {
         setTimeout(function() {
           messageEl.textContent = '';
@@ -484,7 +188,7 @@
         }, 3000);
       }
     }
-    
+
     // HTMLエスケープ関数
     function escapeHtml(unsafe) {
       if (!unsafe) return '';
@@ -496,7 +200,7 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
     }
-    
+
     // 日付フォーマット関数
     function formatDate(dateString) {
       if (!dateString) return '';
@@ -508,14 +212,12 @@
       });
     }
   </script>
-  
-  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+
   <script>
     // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
     (function() {
       const url = '<?!= getWebAppUrl(); ?>';
-      document.getElementById('menu-button-top').href = url;
-      document.getElementById('menu-button-bottom').href = url;
+      document.querySelectorAll('.js-menu-link').forEach(el => { el.href = url; });
     })();
   </script>
 </body>

@@ -5,390 +5,70 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>書籍情報編集</title>
-  <?!= includeHtml_('responsive_scale'); ?>
+  <?!= includeHtml_('common_styles'); ?>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
-    
-    /* --- General Styles --- */
-    body, html {
-      margin: 0;
-      padding: 0;
-      font-family: 'Noto Sans JP', sans-serif;
-      height: 100%;
-      background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
-      color: #2c3e50;
-      line-height: 1.7;
-      font-size: 48px;
-      -webkit-text-size-adjust: 100%;
-      position: relative;
-    }
-    
-    body::before {
-      content: "";
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-image: 
-        repeating-linear-gradient(
-          45deg,
-          transparent,
-          transparent 35px,
-          rgba(139, 111, 78, 0.03) 35px,
-          rgba(139, 111, 78, 0.03) 70px
-        );
-      pointer-events: none;
-      z-index: 1;
-    }
-    
-    .container {
-      position: relative;
-      z-index: 2;
-      margin: 0;
-      padding: 45px;
-      background-color: rgba(255, 255, 255, 0.95);
-      width: 100%;
-      min-height: 100vh;
-      box-sizing: border-box;
-      box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
-    }
-    
-    h1 {
-      text-align: center;
-      color: #8b6f4e;
-      margin-top: 0;
-      margin-bottom: 90px;
-      border-bottom: 6px solid #d4af37;
-      padding-bottom: 60px;
-      font-size: 72px;
-      font-family: 'Noto Serif JP', serif;
-      font-weight: 700;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-      position: relative;
-    }
-    
-    h1::before {
-      content: "📝";
-      display: block;
-      font-size: 48px;
-      margin-bottom: 20px;
-    }
-    
-    /* --- Search Section --- */
-    .search-section {
-      background: rgba(255, 255, 255, 0.7);
-      padding: 45px;
-      border-radius: 20px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      margin-bottom: 60px;
-    }
-    
-    .search-form {
-      display: flex;
-      gap: 30px;
-      align-items: flex-end;
-      flex-wrap: wrap;
-    }
-    
-    .form-group {
-      flex: 1;
-      min-width: 400px;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 15px;
-      font-weight: 700;
-      color: #8b6f4e;
-      font-size: 42px;
-    }
-    
-    input[type="text"], textarea, select {
-      width: 100%;
-      padding: 25px;
-      border: 3px solid #d4af37;
-      border-radius: 15px;
-      font-size: 42px;
-      font-family: 'Noto Sans JP', sans-serif;
-      box-sizing: border-box;
-      background: rgba(255, 255, 255, 0.9);
-    }
-    
-    textarea {
-      min-height: 150px;
-      resize: vertical;
-    }
-    
-    input[type="text"]:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: #8b6f4e;
-      box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.2);
-    }
-    
-    /* --- Button Styles --- */
-    button {
-      color: white;
-      padding: 30px 60px;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      font-size: 48px;
-      font-weight: 700;
-      transition: all 0.3s ease;
-      margin-top: 30px;
-      font-family: 'Noto Sans JP', sans-serif;
-      -webkit-tap-highlight-color: transparent;
-      touch-action: manipulation;
-      min-height: 100px;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-    }
-    
-    button::before {
-      content: "";
-      position: absolute;
-      top: -50%;
-      left: -50%;
-      width: 200%;
-      height: 200%;
-      background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, transparent 70%);
-      transform: scale(0);
-      transition: transform 0.5s ease;
-    }
-    
-    button:hover::before {
-      transform: scale(1);
-    }
-    
-    button:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
-    }
-    
-    button:disabled {
-      background: #cccccc;
-      cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
-    }
-    
-    .search-button {
-      background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
-    }
-    
-    .save-button {
-      background: linear-gradient(135deg, #28a745 0%, #218838 100%);
-    }
-    
-    .cancel-button {
-      background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
-    }
-    
-    .delete-button {
-      background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-    }
-    
-    /* --- Book Info Section --- */
-    .book-info-section {
-      background: rgba(255, 255, 255, 0.7);
-      padding: 45px;
-      border-radius: 20px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      margin-bottom: 60px;
-      display: none;
-    }
-    
-    .book-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 45px;
-      padding-bottom: 30px;
-      border-bottom: 3px solid #d4af37;
-    }
-    
-    .book-title {
-      font-size: 54px;
-      font-weight: 700;
-      color: #8b6f4e;
-      font-family: 'Noto Serif JP', serif;
-      margin: 0;
-    }
-    
-    .book-id {
-      font-size: 48px;
-      color: #6c757d;
-      font-weight: 700;
-    }
-    
-    .edit-form {
-      display: flex;
-      flex-direction: column;
-      gap: 30px;
-    }
-    
+    /* ページ固有: 2列フォーム行・読み取り専用値・現在の状態・履歴統計・削除確認モーダル */
     .info-row {
-      display: flex;
-      gap: 30px;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: 1fr;
+      column-gap: 0.75rem;
     }
-    
-    .info-item {
-      flex: 1;
-      min-width: 400px;
+    @media (min-width: 640px) {
+      .info-row { grid-template-columns: 1fr 1fr; }
     }
-    
     .info-label {
-      font-size: 36px;
-      color: #6c757d;
-      margin-bottom: 10px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
     }
-    
     .info-value {
-      font-size: 42px;
-      color: #2c3e50;
+      font-size: 0.95rem;
       font-weight: 700;
-      margin-bottom: 20px;
-      padding: 15px;
-      background: rgba(255, 255, 255, 0.5);
-      border-radius: 10px;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg);
+      border-radius: var(--radius);
+      margin-bottom: 0.875rem;
     }
-    
-    /* --- Lending History Section --- */
-    .history-section {
-      background: rgba(255, 255, 255, 0.7);
-      padding: 45px;
-      border-radius: 20px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      margin-bottom: 60px;
-    }
-    
-    .history-title {
-      font-size: 54px;
-      font-weight: 700;
-      color: #8b6f4e;
-      margin-bottom: 30px;
-      font-family: 'Noto Serif JP', serif;
-    }
-    
+
+    textarea { min-height: 5rem; resize: vertical; }
+
     .history-stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 30px;
-      margin-bottom: 45px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.625rem;
+      margin-bottom: 1rem;
     }
-    
     .stat-card {
-      background: white;
-      padding: 30px;
-      border-radius: 15px;
+      background: var(--bg);
+      border-radius: var(--radius);
+      padding: 0.75rem 0.5rem;
       text-align: center;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     }
-    
     .stat-value {
-      font-size: 60px;
+      font-size: 1.5rem;
       font-weight: 700;
-      color: #8b6f4e;
-      margin-bottom: 10px;
+      color: var(--accent);
+      line-height: 1.3;
     }
-    
     .stat-label {
-      font-size: 36px;
-      color: #6c757d;
+      font-size: 0.78rem;
+      color: var(--text-muted);
     }
-    
-    /* --- Table Styles --- */
-    .table-container {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: white;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    }
-    
-    th {
-      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
-      color: white;
-      padding: 25px;
-      text-align: left;
-      font-weight: 700;
-      font-size: 42px;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-    
-    td {
-      padding: 20px 25px;
-      border-bottom: 2px solid #f0f0f0;
-      font-size: 42px;
-    }
-    
-    tr:hover {
-      background: rgba(212, 175, 55, 0.1);
-    }
-    
-    .status-returned {
-      color: #28a745;
-      font-weight: 700;
-    }
-    
-    .status-not-returned {
-      color: #dc3545;
-      font-weight: 700;
-    }
-    
-    .status-available {
-      color: #28a745;
-      font-weight: 700;
-    }
-    
-    .status-borrowed {
-      color: #dc3545;
-      font-weight: 700;
-    }
-    
-    /* --- Message Area --- */
-    #message {
-      margin-top: 45px;
-      font-weight: 700;
-      padding: 45px;
-      border-radius: 20px;
+
+    /* 現在の状態(#book-status にJSが status-available / status-borrowed を付与する) */
+    .current-status {
+      background: var(--bg);
+      border-radius: var(--radius);
+      padding: 0.75rem;
+      margin-bottom: 0.875rem;
       text-align: center;
-      font-size: 48px;
-      position: relative;
-      overflow: hidden;
     }
-    
-    #message:not(:empty) {
-      display: block;
-      background: linear-gradient(135deg, #e2f3ff 0%, #d6ecff 100%);
-      border: 3px solid #b8dffc;
-      color: #0056b3;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    #message.success {
-      background: linear-gradient(135deg, #d4edda 0%, #c8e6cc 100%);
-      color: #155724;
-      border: 3px solid #c3e6cb;
-    }
-    
-    #message.error {
-      background: linear-gradient(135deg, #f8d7da 0%, #f5c2c7 100%);
-      color: #721c24;
-      border: 3px solid #f5c6cb;
-    }
-    
-    /* --- Modal --- */
+    .status-available { color: var(--success); font-weight: 700; }
+    .status-borrowed { color: var(--danger); font-weight: 700; }
+    .status-returned { color: var(--success); font-weight: 700; }
+    .status-not-returned { color: var(--danger); font-weight: 700; }
+
+    /* 削除確認モーダル(表示切替はJSがstyle.displayで行う) */
     .modal {
       display: none;
       position: fixed;
@@ -397,260 +77,200 @@
       top: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0, 0, 0, 0.5);
+      background-color: rgba(16, 24, 32, 0.5);
     }
-    
     .modal-content {
-      background-color: #fefefe;
-      margin: 15% auto;
-      padding: 60px;
-      border: 1px solid #888;
-      width: 80%;
-      max-width: 800px;
-      border-radius: 20px;
-      box-shadow: 0 10px 50px rgba(0, 0, 0, 0.3);
+      background: var(--surface);
+      margin: 20vh auto 0;
+      padding: 1.5rem;
+      width: calc(100% - 2rem);
+      max-width: 26rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 10px 40px rgba(16, 24, 32, 0.25);
       text-align: center;
     }
-    
     .modal-title {
-      font-size: 54px;
+      margin: 0 0 0.75rem;
+      font-size: 1.1rem;
       font-weight: 700;
-      color: #dc3545;
-      margin-bottom: 30px;
+      color: var(--danger);
     }
-    
     .modal-text {
-      font-size: 42px;
-      color: #2c3e50;
-      margin-bottom: 45px;
+      margin: 0 0 1.25rem;
+      font-size: 0.95rem;
+      color: var(--text);
     }
-    
     .modal-buttons {
       display: flex;
-      gap: 30px;
+      gap: 0.625rem;
       justify-content: center;
     }
-    
-    /* --- Current Status --- */
-    .current-status {
-      background: rgba(255, 255, 255, 0.7);
-      padding: 30px;
-      border-radius: 15px;
-      margin-bottom: 45px;
-      text-align: center;
-    }
-    
-    .current-status h3 {
-      font-size: 48px;
-      color: #8b6f4e;
-      margin-bottom: 20px;
-    }
-    
-    /* --- Menu Button --- */
-    .menu-button {
-      background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
-      color: white;
-      padding: 30px 60px;
-      font-size: 48px;
-      border: none;
-      border-radius: 50px;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 15px;
-      margin: 30px 0;
-      transition: all 0.3s;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-      font-weight: 700;
-    }
-    
-    .menu-button:hover {
-      background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-    }
-    
-    .menu-button-container {
-      text-align: center;
-      margin: 30px 0;
-      position: relative;
-      z-index: 2;
-    }
-    
-    /* --- Responsive Design --- */
-    @media (max-width: 600px) {
-      .container {
-        padding: 30px;
-      }
-      h1 {
-        font-size: 60px;
-      }
-      th, td {
-        font-size: 36px;
-        padding: 20px;
-      }
-      button {
-        font-size: 42px;
-        padding: 24px 48px;
-      }
-    }
+    .modal-buttons button { flex: 1 1 0; }
   </style>
 </head>
 <body>
-  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
-  <div class="container">
-    <h1>書籍情報編集</h1>
-    
-    <!-- 書籍検索 -->
-    <div class="search-section">
-      <form class="search-form" onsubmit="searchBook(event)">
-        <div class="form-group">
-          <label for="book-id">書籍ID (ISBN/バーコード)</label>
-          <input type="text" id="book-id" placeholder="書籍IDを入力して検索" required>
+  <header class="app-header">
+    <a href="#" class="app-header-back js-menu-link">← メニュー</a>
+    <span class="app-header-title"><span class="group-dot manage"></span>書籍情報編集</span>
+  </header>
+
+  <main class="app-main wide">
+    <div class="two-col">
+      <div>
+        <!-- 書籍検索 -->
+        <div class="card">
+          <h2 class="card-title">書籍検索</h2>
+          <form onsubmit="searchBook(event)">
+            <div class="field">
+              <label for="book-id">書籍ID (ISBN/バーコード)</label>
+              <div class="input-row">
+                <input type="text" id="book-id" placeholder="書籍IDを入力" required>
+                <button type="submit" class="btn-primary">検索</button>
+              </div>
+            </div>
+          </form>
         </div>
-        <button type="submit" class="search-button">🔍 検索</button>
-      </form>
+      </div>
+
+      <div>
+        <!-- 書籍情報編集 -->
+        <div class="card" id="book-info-section" style="display: none;">
+          <h2 class="card-title">書籍情報 <span class="mono text-muted" id="display-book-id"></span></h2>
+
+          <!-- 現在の状態 -->
+          <div class="current-status" id="current-status">
+            <div class="info-label">現在の状態</div>
+            <div class="stat-value" id="book-status">-</div>
+          </div>
+
+          <form onsubmit="saveBook(event)">
+            <div class="info-row">
+              <div class="field">
+                <label for="book-title">書籍名</label>
+                <input type="text" id="book-title" required>
+              </div>
+              <div class="field">
+                <label for="book-author">著者名</label>
+                <input type="text" id="book-author">
+              </div>
+            </div>
+
+            <div class="info-row">
+              <div class="field">
+                <label for="book-publisher">出版社</label>
+                <input type="text" id="book-publisher">
+              </div>
+              <div class="field">
+                <label for="book-category">カテゴリー</label>
+                <select id="book-category">
+                  <option value="">未分類</option>
+                  <option value="文学">文学</option>
+                  <option value="小説">小説</option>
+                  <option value="ビジネス">ビジネス</option>
+                  <option value="技術書">技術書</option>
+                  <option value="教育">教育</option>
+                  <option value="児童書">児童書</option>
+                  <option value="雑誌">雑誌</option>
+                  <option value="その他">その他</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="info-row">
+              <div class="field">
+                <label for="book-location">配架場所</label>
+                <input type="text" id="book-location" placeholder="例: A-1-3">
+              </div>
+              <div class="field">
+                <label for="book-note">備考</label>
+                <textarea id="book-note" placeholder="特記事項があれば入力"></textarea>
+              </div>
+            </div>
+
+            <div class="info-row">
+              <div>
+                <div class="info-label">登録日</div>
+                <div class="info-value" id="registration-date">-</div>
+              </div>
+              <div>
+                <div class="info-label">最終貸出日</div>
+                <div class="info-value" id="last-lending-date">-</div>
+              </div>
+            </div>
+
+            <div class="button-group">
+              <button type="submit" class="btn-primary btn-lg btn-block">保存</button>
+              <button type="button" class="btn-block" onclick="cancelEdit()">キャンセル</button>
+              <button type="button" class="btn-danger-solid btn-block" onclick="confirmDelete()">削除</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- 貸出履歴 -->
+      <div class="card span-2" id="history-section" style="display: none;">
+        <h2 class="card-title">貸出履歴</h2>
+
+        <div class="history-stats">
+          <div class="stat-card">
+            <div class="stat-value" id="total-lending">0</div>
+            <div class="stat-label">累計貸出回数</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="average-days">0</div>
+            <div class="stat-label">平均貸出日数</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="popular-rank">-</div>
+            <div class="stat-label">人気順位</div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>利用者ID</th>
+                <th>利用者名</th>
+                <th>貸出日</th>
+                <th>返却日</th>
+                <th>貸出日数</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
-    
-    <!-- 書籍情報編集 -->
-    <div class="book-info-section" id="book-info-section">
-      <div class="book-header">
-        <h2 class="book-title">書籍情報</h2>
-        <span class="book-id" id="display-book-id"></span>
-      </div>
-      
-      <!-- 現在の状態 -->
-      <div class="current-status" id="current-status">
-        <h3>現在の状態</h3>
-        <div class="stat-value" id="book-status">-</div>
-      </div>
-      
-      <form class="edit-form" onsubmit="saveBook(event)">
-        <div class="info-row">
-          <div class="info-item">
-            <label for="book-title">書籍名</label>
-            <input type="text" id="book-title" required>
-          </div>
-          <div class="info-item">
-            <label for="book-author">著者名</label>
-            <input type="text" id="book-author">
-          </div>
-        </div>
-        
-        <div class="info-row">
-          <div class="info-item">
-            <label for="book-publisher">出版社</label>
-            <input type="text" id="book-publisher">
-          </div>
-          <div class="info-item">
-            <label for="book-category">カテゴリー</label>
-            <select id="book-category">
-              <option value="">未分類</option>
-              <option value="文学">文学</option>
-              <option value="小説">小説</option>
-              <option value="ビジネス">ビジネス</option>
-              <option value="技術書">技術書</option>
-              <option value="教育">教育</option>
-              <option value="児童書">児童書</option>
-              <option value="雑誌">雑誌</option>
-              <option value="その他">その他</option>
-            </select>
-          </div>
-        </div>
-        
-        <div class="info-row">
-          <div class="info-item">
-            <label for="book-location">配架場所</label>
-            <input type="text" id="book-location" placeholder="例: A-1-3">
-          </div>
-          <div class="info-item">
-            <label for="book-note">備考</label>
-            <textarea id="book-note" placeholder="特記事項があれば入力"></textarea>
-          </div>
-        </div>
-        
-        <div class="info-row">
-          <div class="info-item">
-            <div class="info-label">登録日</div>
-            <div class="info-value" id="registration-date">-</div>
-          </div>
-          <div class="info-item">
-            <div class="info-label">最終貸出日</div>
-            <div class="info-value" id="last-lending-date">-</div>
-          </div>
-        </div>
-        
-        <div style="display: flex; gap: 30px; justify-content: center; margin-top: 45px;">
-          <button type="submit" class="save-button">💾 保存</button>
-          <button type="button" class="cancel-button" onclick="cancelEdit()">キャンセル</button>
-          <button type="button" class="delete-button" onclick="confirmDelete()">🗑️ 削除</button>
-        </div>
-      </form>
-    </div>
-    
-    <!-- 貸出履歴 -->
-    <div class="history-section" id="history-section" style="display: none;">
-      <h3 class="history-title">📚 貸出履歴</h3>
-      
-      <div class="history-stats">
-        <div class="stat-card">
-          <div class="stat-value" id="total-lending">0</div>
-          <div class="stat-label">累計貸出回数</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="average-days">0</div>
-          <div class="stat-label">平均貸出日数</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="popular-rank">-</div>
-          <div class="stat-label">人気順位</div>
-        </div>
-      </div>
-      
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>利用者ID</th>
-              <th>利用者名</th>
-              <th>貸出日</th>
-              <th>返却日</th>
-              <th>貸出日数</th>
-            </tr>
-          </thead>
-          <tbody id="history-body"></tbody>
-        </table>
-      </div>
-    </div>
-    
+
     <div id="message"></div>
-  </div>
-  
+  </main>
+
   <!-- 削除確認モーダル -->
   <div id="deleteModal" class="modal">
     <div class="modal-content">
-      <h3 class="modal-title">⚠️ 削除確認</h3>
+      <h3 class="modal-title">削除確認</h3>
       <p class="modal-text">この書籍を削除してもよろしいですか？<br>この操作は取り消せません。</p>
       <div class="modal-buttons">
-        <button class="delete-button" onclick="deleteBook()">削除する</button>
-        <button class="cancel-button" onclick="closeModal()">キャンセル</button>
+        <button class="btn-danger-solid" onclick="deleteBook()">削除する</button>
+        <button onclick="closeModal()">キャンセル</button>
       </div>
     </div>
   </div>
-  
+
   <script>
     let currentBookData = null;
-    
+
     // 書籍を検索する関数
     function searchBook(event) {
       event.preventDefault();
       const bookId = document.getElementById('book-id').value.trim();
-      
+
       if (!bookId) return;
-      
+
       showMessage('書籍情報を検索中...', '');
-      
+
       google.script.run
         .withSuccessHandler(function(data) {
           if (data) {
@@ -669,7 +289,7 @@
         })
         .getBookFullDetails(bookId);
     }
-    
+
     // 書籍情報を表示する関数
     function displayBookInfo(data) {
       document.getElementById('book-info-section').style.display = 'block';
@@ -682,7 +302,7 @@
       document.getElementById('book-note').value = data.note || '';
       document.getElementById('registration-date').textContent = formatDate(data.registrationDate) || '-';
       document.getElementById('last-lending-date').textContent = formatDate(data.lastLendingDate) || '-';
-      
+
       // 現在の状態を表示
       const statusEl = document.getElementById('book-status');
       if (data.status === '廃棄') {
@@ -696,7 +316,7 @@
         statusEl.className = 'stat-value status-borrowed';
       }
     }
-    
+
     // 書籍の貸出履歴を読み込む関数
     function loadBookHistory(bookId) {
       google.script.run
@@ -708,16 +328,16 @@
         })
         .getBookLendingHistory(bookId);
     }
-    
+
     // 貸出履歴を表示する関数
     function displayBookHistory(history) {
       document.getElementById('history-section').style.display = 'block';
-      
+
       // 統計情報の計算
       const totalLending = history.length;
       let totalDays = 0;
       let returnedCount = 0;
-      
+
       history.forEach(record => {
         if (record.returnDate) {
           returnedCount++;
@@ -727,29 +347,29 @@
           totalDays += days;
         }
       });
-      
+
       const averageDays = returnedCount > 0 ? Math.round(totalDays / returnedCount) : 0;
-      
+
       document.getElementById('total-lending').textContent = totalLending;
       document.getElementById('average-days').textContent = averageDays;
       // 人気順位は別途計算が必要なため、今は「-」を表示
       document.getElementById('popular-rank').textContent = '-';
-      
+
       // 履歴テーブル
       const tbody = document.getElementById('history-body');
       tbody.innerHTML = '';
-      
+
       // 最新20件のみ表示
       const recentHistory = history.slice(0, 20);
       recentHistory.forEach(record => {
         const row = document.createElement('tr');
-        
+
         const lendingDate = new Date(record.lendingDate);
         const returnDate = record.returnDate ? new Date(record.returnDate) : null;
         const days = returnDate ? Math.ceil((returnDate - lendingDate) / (1000 * 60 * 60 * 24)) : '-';
-        
+
         row.innerHTML = `
-          <td>${escapeHtml(record.userId)}</td>
+          <td class="mono">${escapeHtml(record.userId)}</td>
           <td>${escapeHtml(record.userName)}</td>
           <td>${formatDate(record.lendingDate)}</td>
           <td>${record.returnDate ? formatDate(record.returnDate) : '-'}</td>
@@ -758,13 +378,13 @@
         tbody.appendChild(row);
       });
     }
-    
+
     // 書籍情報を保存する関数
     function saveBook(event) {
       event.preventDefault();
-      
+
       if (!currentBookData) return;
-      
+
       const updatedData = {
         bookId: currentBookData.bookId,
         title: document.getElementById('book-title').value.trim(),
@@ -774,9 +394,9 @@
         location: document.getElementById('book-location').value.trim(),
         note: document.getElementById('book-note').value.trim()
       };
-      
+
       showMessage('保存中...', '');
-      
+
       google.script.run
         .withSuccessHandler(function(result) {
           showMessage('書籍情報を更新しました', 'success');
@@ -787,7 +407,7 @@
         })
         .updateBookInfo(updatedData);
     }
-    
+
     // 編集をキャンセルする関数
     function cancelEdit() {
       if (currentBookData) {
@@ -797,7 +417,7 @@
         document.getElementById('history-section').style.display = 'none';
       }
     }
-    
+
     // 削除確認を表示する関数
     function confirmDelete() {
       // 廃棄済みの書籍を重ねて削除しない
@@ -812,19 +432,19 @@
       }
       document.getElementById('deleteModal').style.display = 'block';
     }
-    
+
     // モーダルを閉じる関数
     function closeModal() {
       document.getElementById('deleteModal').style.display = 'none';
     }
-    
+
     // 書籍を削除する関数
     function deleteBook() {
       if (!currentBookData) return;
-      
+
       showMessage('削除中...', '');
       closeModal();
-      
+
       google.script.run
         .withSuccessHandler(function(result) {
           showMessage('書籍を削除しました', 'success');
@@ -840,13 +460,13 @@
         })
         .deleteBook(currentBookData.bookId);
     }
-    
+
     // メッセージを表示する関数
     function showMessage(message, type) {
       const messageEl = document.getElementById('message');
       messageEl.textContent = message;
       messageEl.className = type;
-      
+
       if (type === 'success' || (type !== 'error' && message === '')) {
         setTimeout(function() {
           messageEl.textContent = '';
@@ -854,7 +474,7 @@
         }, 3000);
       }
     }
-    
+
     // HTMLエスケープ関数
     function escapeHtml(unsafe) {
       if (!unsafe) return '';
@@ -866,7 +486,7 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
     }
-    
+
     // 日付フォーマット関数
     function formatDate(dateString) {
       if (!dateString) return '';
@@ -877,7 +497,7 @@
         day: '2-digit'
       });
     }
-    
+
     // モーダル外クリックで閉じる
     window.onclick = function(event) {
       const modal = document.getElementById('deleteModal');
@@ -886,14 +506,12 @@
       }
     }
   </script>
-  
-  <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
+
   <script>
     // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
     (function() {
       const url = '<?!= getWebAppUrl(); ?>';
-      document.getElementById('menu-button-top').href = url;
-      document.getElementById('menu-button-bottom').href = url;
+      document.querySelectorAll('.js-menu-link').forEach(el => { el.href = url; });
     })();
   </script>
 </body>
