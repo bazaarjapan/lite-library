@@ -353,10 +353,11 @@
   #status-message:not(.hidden):not(:empty) {
     display: block;
     position: fixed;
-    top: 0;
+    /* ヘッダーの下に表示する(ヘッダーを覆うと「← メニュー」が押せなくなる) */
+    top: var(--header-h);
     left: 0;
     right: 0;
-    /* スキャナーオーバーレイ(1000〜1002)や確認モーダル(1000)より下、ヘッダー(800)より上 */
+    /* スキャナーオーバーレイ(1000〜1002)や確認モーダル(1000)より下に置く */
     z-index: 900;
     margin: 0;
     padding: 0.75rem 1rem;
@@ -430,6 +431,9 @@
   .scanner-viewport br,
   .scanner-viewport .drawingBuffer,
   .scanner-viewport canvas:not(:last-child) { display: none !important; }
+
+  /* ページ最下部の「← メニューに戻る」(全ページ共通。js-menu-linkでURLが設定される) */
+  .bottom-menu-link { margin-top: 1.5rem; }
 
   /* ---- ユーティリティ ---- */
   .text-muted { color: var(--text-muted); }
