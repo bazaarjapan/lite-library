@@ -780,7 +780,9 @@ function createReservation_(bookId, userId) {
     if (!userSheet) {
       throw new Error("利用者DBシートが見つかりません。");
     }
-    const userRowNum = findRowByValue_(userSheet, 1, uid);
+    // 大文字小文字は無視して照合し(getUserInfo等と同じ扱い)、
+    // 予約DBにはシート上の正規の利用者IDを保存する
+    const userRowNum = findRowByValue_(userSheet, 1, uid, { matchCase: false });
     if (userRowNum === -1) {
       return { success: false, message: `利用者ID ${uid} が見つかりません。` };
     }
@@ -788,6 +790,7 @@ function createReservation_(bookId, userId) {
     if ((userValues[6] || "").toString().trim() === "削除済み") {
       return { success: false, message: `利用者ID ${uid} が見つかりません。` };
     }
+    const canonicalUserId = userValues[0] ? userValues[0].toString().trim() : uid;
     const userName = userValues[1] ? userValues[1].toString() : "";
 
     // 本の特定(管理番号→ISBNの順)と検証
@@ -872,7 +875,7 @@ function createReservation_(bookId, userId) {
 
     // 同一キー×同一利用者の重複予約を拒否
     const duplicate = actives.find(r =>
-      r.bookKey === reservationKey && r.userId.toLowerCase() === uid.toLowerCase()
+      r.bookKey === reservationKey && r.userId.toLowerCase() === canonicalUserId.toLowerCase()
     );
     if (duplicate) {
       return { success: false, message: `「${title}」は既に ${userName} さんが予約中です(予約ID: ${duplicate.reservationId})。` };
@@ -880,7 +883,7 @@ function createReservation_(bookId, userId) {
     const queuePosition = actives.filter(r => r.bookKey === reservationKey).length + 1;
 
     const reservationId = "R" + new Date().getTime();
-    sheet.appendRow([reservationId, reservationKey, title, uid, userName, new Date(), "予約中", ""]);
+    sheet.appendRow([reservationId, reservationKey, title, canonicalUserId, userName, new Date(), "予約中", ""]);
     console.log(`予約登録: ${reservationId} 「${title}」 利用者 ${uid} (順番 ${queuePosition})`);
     return {
       success: true,
@@ -1551,14 +1554,24 @@ function processBulkReturnByRowNumbers_(records) {
       try {
         // 実際に「未返却→返却済」の遷移が起きる行だけを返却として扱う。
         // 古い画面からの二重送信や行ずれで別の行を返却済にしたり、
-        // 予約の取り置き昇格を余分に消費したりしないための検証
+        // 予約の取り置き昇格を余分に消費したりしないための検証。
+        // 同一管理番号の未返却が重複する異常データでも取り違えないよう、
+        // renewLending_ と同じく利用者IDと貸出日時も照合する(渡された場合のみ)
         const rowValues = lendingSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
         const rowBookId = rowValues[0] ? rowValues[0].toString().trim() : "";
         const expectedBookId = bookId ? bookId.toString().trim() : "";
-        if (rowBookId !== expectedBookId || rowValues[6] !== "未返却") {
+        const rowUserId = rowValues[2] ? rowValues[2].toString().trim().toLowerCase() : "";
+        const expectedUserId = record.userId ? record.userId.toString().trim().toLowerCase() : "";
+        const rowLendingDate = (rowValues[4] instanceof Date && !isNaN(rowValues[4]))
+          ? rowValues[4].toISOString()
+          : "";
+        const expectedLendingDate = record.lendingDate ? record.lendingDate.toString().trim() : "";
+        if (rowBookId !== expectedBookId || rowValues[6] !== "未返却" ||
+            (expectedUserId !== "" && rowUserId !== expectedUserId) ||
+            (expectedLendingDate !== "" && rowLendingDate !== expectedLendingDate)) {
           errorCount++;
           errorMessages.push(`書籍ID ${expectedBookId}(行 ${rowNumber}): 貸出記録が更新されています。再検索してから返却してください。`);
-          console.warn(`返却スキップ: 行 ${rowNumber} は書籍ID不一致または未返却ではありません(期待: ${expectedBookId} / 実際: ${rowBookId} / 状況: ${rowValues[6]})。`);
+          console.warn(`返却スキップ: 行 ${rowNumber} は選択時の貸出記録と一致しません(期待: ${expectedBookId} / 実際: ${rowBookId} / 状況: ${rowValues[6]})。`);
           return;
         }
 

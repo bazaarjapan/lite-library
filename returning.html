@@ -433,7 +433,7 @@
           
           html += `
             <tr>
-              <td><input type="checkbox" class="book-checkbox" data-row-number="${record.rowNumber}" data-book-id="${record.bookId}" onchange="updateSelectedBooks()"></td>
+              <td><input type="checkbox" class="book-checkbox" data-row-number="${record.rowNumber}" data-book-id="${record.bookId}" data-user-id="${record.userId || ''}" data-lending-date="${record.lendingDate || ''}" onchange="updateSelectedBooks()"></td>
               <td class="mono">${record.bookId || 'N/A'}</td>
               <td>${record.bookTitle || 'N/A'}</td>
               <td>${record.userName || 'N/A'}<span class="user-id">ID: ${record.userId || 'N/A'}</span></td>
@@ -473,10 +473,12 @@
               const rowNumber = checkbox.getAttribute('data-row-number');
               const bookId = checkbox.getAttribute('data-book-id');
               if (rowNumber) {
-                  // 行番号で一意に識別
+                  // 行番号で一意に識別し、行ずれ検証用に利用者ID・貸出日時も渡す
                   selectedBookIds.push({
                       rowNumber: parseInt(rowNumber),
-                      bookId: bookId // デバッグ用に保持
+                      bookId: bookId,
+                      userId: checkbox.getAttribute('data-user-id') || '',
+                      lendingDate: checkbox.getAttribute('data-lending-date') || ''
                   });
               }
           });
