@@ -1578,7 +1578,7 @@ function registerBook_(bookData) {
       // 書籍IDが正しく認識されなくなるため、先に移行を促す
       return {
         success: false,
-        message: "書籍DBが旧レイアウトのままです。スプレッドシートの管理メニューから「書籍DBを新レイアウトへ移行」を実行してから登録してください。"
+        message: "書籍DBが旧レイアウトのままです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してから登録してください。"
       };
     }
     
@@ -2031,20 +2031,22 @@ function getAllUserIds_() {
  */
 function onOpen() {
   // 日常運用で使う項目のみ表示する。運用開始時・環境再構築時のみ必要な
-  // 一回きり系は下のコメントアウトを外して使う(関数自体は残している)
+  // 一回きり系は下のコメントアウトを外して使う(関数自体は残している)。
+  // コメントを外してもチェーンが壊れないよう、コメント行は必ず有効な
+  // .addItem より前(セミコロンより前)に置くこと
   const menu = SpreadsheetApp.getUi()
       .createMenu('管理メニュー')
       // .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
       // .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
+      // .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
+      // .addItem('延滞通知トリガー解除', 'removeOverdueTriggerFromMenu')
+      // .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
+      // .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu')
       .addItem('スキーマ検証', 'validateSchemaFromMenu')
       .addItem('状態の整合性チェック・修復', 'checkBookStatusConsistencyFromMenu')
       .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
-      // .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
-      // .addItem('延滞通知トリガー解除', 'removeOverdueTriggerFromMenu')
       .addItem('貸出状況レポート作成', 'generateLendingReport')
       .addItem('返却済データのバックアップ', 'showBackupDialog');
-      // .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
-      // .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu');
 
   // 破壊的な開発用メニューは、設定DBの operationMode が development の
   // ときだけ表示する(本番データの誤リセット防止。設定読み取りに失敗しても
@@ -2209,7 +2211,7 @@ function validateSchema_() {
       success: false,
       message: "スキーマのずれを検出しました。列の並びが定義と異なるとデータが誤読されます:\n\n" +
         problems.join("\n") +
-        "\n\n書籍DBが旧レイアウトの場合は「書籍DBを新レイアウトへ移行」を実行してください。",
+        "\n\n書籍DBが旧レイアウトの場合はonOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。",
       problems: problems
     };
   } catch (error) {
@@ -2264,7 +2266,7 @@ function analyzeBookStatusConsistency_() {
       return { success: false, message: "書籍DBまたは貸出記録シートが見つかりません。", mismatches: [], orphans: [], doubleLent: [] };
     }
     if (!isNewBookLayout_(bookSheet)) {
-      return { success: false, message: "書籍DBが旧レイアウトです。先に「書籍DBを新レイアウトへ移行」を実行してください。", mismatches: [], orphans: [], doubleLent: [] };
+      return { success: false, message: "書籍DBが旧レイアウトです。先にonOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。", mismatches: [], orphans: [], doubleLent: [] };
     }
 
     // 貸出記録から未返却の書籍IDごとの件数を集計
@@ -4629,7 +4631,7 @@ function deleteBook_(bookId) {
     }
     
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。先に管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。先にonOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     const data = bookSheet.getDataRange().getValues();
