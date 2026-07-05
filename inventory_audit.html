@@ -51,7 +51,7 @@
               <div class="progress-grid">
                 <div class="progress-item">
                   <div class="progress-value" id="count-total">0</div>
-                  <div class="progress-label">対象蔵書</div>
+                  <div class="progress-label">棚にあるはず(貸出中を除く)</div>
                 </div>
                 <div class="progress-item">
                   <div class="progress-value" id="count-scanned">0</div>
@@ -110,13 +110,20 @@
       }
 
       function updateCounters() {
-        const total = books.size;
-        // スキャン済みのうち蔵書に存在するものだけを数える(未登録IDは対象外)
-        let scannedKnown = 0;
-        scanned.forEach(id => { if (books.has(id)) scannedKnown++; });
+        // 進捗の母数は「棚にあるはずの本」(貸出中を除く)。貸出中の本は
+        // スキャンされたら警告リストに出るだけで進捗には数えない
+        // (数えると貸出が1冊でもある限り未スキャンが0にならない)。
+        // 未登録IDも対象外
+        let total = 0;
+        let scannedOnShelf = 0;
+        books.forEach(book => {
+          if (book.status === '貸出中') return;
+          total++;
+          if (scanned.has(book.managementNumber)) scannedOnShelf++;
+        });
         document.getElementById('count-total').textContent = total;
-        document.getElementById('count-scanned').textContent = scannedKnown;
-        document.getElementById('count-remaining').textContent = total - scannedKnown;
+        document.getElementById('count-scanned').textContent = scannedOnShelf;
+        document.getElementById('count-remaining').textContent = total - scannedOnShelf;
       }
 
       function addListItem(listId, countId, text) {
