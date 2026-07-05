@@ -177,10 +177,41 @@ function getWebAppUrl() {
     return url;
   }
 
-  return url.replace(
+  const domainScopedUrl = url.replace(
     'https://script.google.com/macros/s/',
     `https://script.google.com/a/macros/${domain}/s/`
   );
+  // 独自ドメインのメールで登録した個人アカウントはWorkspaceではなく、
+  // ドメイン付きURLが存在しない(404)。実際に到達可能な場合のみ書き換える
+  return (domainScopedUrl !== url && isDomainScopedUrlUsable_(domainScopedUrl))
+    ? domainScopedUrl
+    : url;
+}
+
+/**
+ * ドメイン付きWebアプリURL(/a/macros/<ドメイン>/s/...)が実在するかを確認する補助関数。
+ * 実在するWorkspaceドメインならログインページ等(200系)が返り、存在しない
+ * ドメインのパスは404になる。結果はキャッシュし(6時間)、確認に失敗した場合は
+ * 書き換えない安全側(false)に倒す。
+ * @param {string} domainScopedUrl - 確認するドメイン付きURL
+ * @return {boolean} 到達可能なら true
+ */
+function isDomainScopedUrlUsable_(domainScopedUrl) {
+  const cacheKey = "webAppDomainUrlUsable_v1";
+  try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get(cacheKey);
+    if (cached !== null) {
+      return cached === "true";
+    }
+    const response = UrlFetchApp.fetch(domainScopedUrl, { muteHttpExceptions: true });
+    const usable = response.getResponseCode() !== 404;
+    cache.put(cacheKey, usable ? "true" : "false", 21600);
+    return usable;
+  } catch (e) {
+    console.warn(`ドメイン付きURLの確認に失敗したため、標準URLを使用します: ${e}`);
+    return false;
+  }
 }
 
 /**
