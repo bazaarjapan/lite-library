@@ -109,7 +109,8 @@
       closeActiveSession('detected');
       handleScan(session, data.code);
     } else if (data.type === 'error') {
-      closeActiveSession('error');
+      // ポップアップは閉じない(中に理由と再試行ボタンが表示される)。
+      // 即クローズすると「開いてもすぐ閉じる」ように見えて原因が分からないため
       setMessageSafe(data.message || 'カメラを起動できませんでした。手入力してください。');
     } else if (data.type === 'ready') {
       setMessageSafe(`${session.context.label}をカメラに向けてください。`);
@@ -254,6 +255,7 @@
     <div>
       <button type="button" id="zoom-out" style="display:none">−</button>
       <button type="button" id="zoom-in" style="display:none">＋</button>
+      <button type="button" id="retry" style="display:none">再試行</button>
       <button type="button" id="switch-camera">切替</button>
       <button type="button" id="close-window">閉じる</button>
     </div>
@@ -292,6 +294,15 @@
       if (el) el.textContent = message;
     }
 
+    // エラーをこのウィンドウ内に表示し、再試行ボタンを出す(ウィンドウは閉じない)。
+    // 親ページにも通知してメッセージを表示させる
+    function showError(message) {
+      setMessage(message);
+      var retryButton = document.getElementById('retry');
+      if (retryButton) retryButton.style.display = '';
+      post('error', { message: message });
+    }
+
     function cleanup() {
       running = false;
       if (window.Quagga) {
@@ -312,12 +323,14 @@
 
     function start() {
       cleanup();
+      var retryButton = document.getElementById('retry');
+      if (retryButton) retryButton.style.display = 'none';
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        post('error', { message: 'このブラウザではカメラを使用できません。手入力してください。' });
+        showError('このブラウザではカメラを使用できません。ウィンドウを閉じて手入力してください。');
         return;
       }
       if (!window.Quagga) {
-        post('error', { message: 'バーコード読み取りライブラリを読み込めませんでした。通信状態を確認してください。' });
+        showError('バーコード読み取りライブラリを読み込めませんでした。通信状態を確認して「再試行」を押してください。');
         return;
       }
 
@@ -351,9 +364,8 @@
         locate: true
       }, function(err) {
         if (err) {
-          var message = err && (err.message || err.name) ? (err.name || 'Error') + ': ' + (err.message || '') : 'カメラを起動できませんでした。';
-          post('error', { message: 'カメラを起動できませんでした。ブラウザのカメラ許可を確認するか、手入力してください。' });
-          setMessage(message);
+          var detail = err && (err.message || err.name) ? '(' + (err.name || 'Error') + ': ' + (err.message || '') + ')' : '';
+          showError('カメラを起動できませんでした。ブラウザのカメラ許可を確認して「再試行」を押すか、閉じて手入力してください。' + detail);
           return;
         }
         running = true;
@@ -423,6 +435,9 @@
 
     document.getElementById('switch-camera').addEventListener('click', function() {
       facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      start();
+    });
+    document.getElementById('retry').addEventListener('click', function() {
       start();
     });
     document.getElementById('close-window').addEventListener('click', function() {
