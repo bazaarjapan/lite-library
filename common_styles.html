@@ -262,7 +262,8 @@
     gap: 0.625rem;
     margin-top: 1rem;
   }
-  /* 入力欄+ボタンの横並び(スキャン・検索) */
+  /* 入力欄+ボタンの横並び(スキャン・検索)。
+     スマホ幅では折り返して入力欄=全幅・ボタン=下段等分割にする */
   .input-row {
     display: flex;
     gap: 0.5rem;
@@ -270,6 +271,31 @@
   }
   .input-row input { flex: 1 1 auto; min-width: 0; }
   .input-row button { flex-shrink: 0; }
+  @media (max-width: 639.98px) {
+    .input-row { flex-wrap: wrap; }
+    .input-row input { flex-basis: 100%; }
+    .input-row button { flex: 1 1 0; }
+  }
+
+  /* スマホ: タッチターゲットと文字をひと回り大きく(片手・移動中の現場操作向け) */
+  @media (max-width: 639.98px) {
+    button, .btn {
+      min-height: 3rem; /* 48px */
+      font-size: 1rem;
+    }
+    input[type="text"],
+    input[type="number"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="date"],
+    select,
+    textarea {
+      min-height: 3rem;
+      font-size: 1.05rem;
+    }
+    .btn-lg { min-height: 3.5rem; }
+    .app-header-back { min-height: 2.5rem; }
+  }
 
   /* ---- テーブル ---- */
   .table-wrap {
