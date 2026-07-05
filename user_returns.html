@@ -386,6 +386,7 @@
                 <th>書籍名</th>
                 <th>貸出日時</th>
                 <th>返却予定日</th>
+                <th>延長</th>
               </tr>
             </thead>
             <tbody>
@@ -417,6 +418,7 @@
               <td>${record.bookTitle || 'N/A'}</td>
               <td>${lendingDateStr}</td>
               <td>${dueDateStr}</td>
+              <td><button class="renew-button" data-book-id="${record.bookId}" data-row-number="${record.rowNumber}" data-user-id="${record.userId || ''}" data-lending-date="${record.lendingDate || ''}" onclick="renewBook(this)">延長</button></td>
             </tr>
           `;
         });
@@ -433,6 +435,35 @@
         updateBulkReturnButtonState(); // ボタンの初期状態を設定
       }
       
+      // 1冊の貸出を延長する関数(サーバー側で延滞・回数上限をチェックする)。
+      // 行番号も渡し、同一管理番号の未返却が重複する異常データでも
+      // クリックした行だけが延長されるようにする
+      function renewBook(button) {
+        const bookId = button.getAttribute('data-book-id');
+        const rowNumber = parseInt(button.getAttribute('data-row-number'), 10);
+        const recUserId = button.getAttribute('data-user-id') || '';
+        const recLendingDate = button.getAttribute('data-lending-date') || '';
+        if (!bookId) return;
+        button.disabled = true;
+        setMessage(`書籍 [${bookId}] の貸出を延長中...`);
+        google.script.run
+          .withSuccessHandler(response => {
+            if (response && response.success) {
+              setMessage(response.message);
+              searchUserRentals(); // 新しい返却予定日を反映するため一覧を再読込
+            } else {
+              setMessage((response && response.message) || '延長に失敗しました。');
+              button.disabled = false;
+            }
+          })
+          .withFailureHandler(error => {
+            setMessage('延長エラー: ' + error.message);
+            console.error('貸出延長エラー:', error);
+            button.disabled = false;
+          })
+          .renewLending(bookId, rowNumber, recUserId, recLendingDate);
+      }
+
       // 全てのチェックボックスの選択/解除を切り替える関数
       function toggleAllCheckboxes() {
         const selectAllCheckbox = document.getElementById('select-all-checkbox');

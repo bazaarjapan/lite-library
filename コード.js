@@ -424,6 +424,166 @@ function getAvailableBook(isbn) {
  * @return {object|null} 書籍情報オブジェクト {title: string, managementNumber: string, isbn: string, status: string} または null
  */
 /**
+ * 貸出を延長する関数(公開ラッパー)
+ * @param {string} bookId - 延長する貸出記録の書籍ID(管理番号)
+ * @param {number} rowNumber - 貸出記録シートの行番号(1始まり)。同一管理番号の
+ *                             未返却が重複する異常データでも、クリックした行だけを延長するため
+ * @param {string} userId - クリックした記録の利用者ID(行ずれ検証用)
+ * @param {string} lendingDate - クリックした記録の貸出日時(ISO文字列・行ずれ検証用)
+ * @return {object} 処理結果 {success: boolean, message: string, newDueDate?: string}
+ */
+function renewLending(bookId, rowNumber, userId, lendingDate) {
+  return runWithScriptLock_(
+    () => renewLending_(bookId, rowNumber, userId, lendingDate),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+/**
+ * 貸出延長の実装。未返却の貸出記録の返却予定日を
+ * 「max(今日, 現在の返却予定日)+貸出期間」に更新する(延長は必ず期限を延ばす)。
+ * - 延滞中(返却予定日が今日より前)は延長不可
+ * - 「延長回数」列(ヘッダー名で特定・なければI列以降に追加)で回数を管理し、
+ *   設定 maxRenewals(既定1、0以下で延長禁止)を超える延長を拒否する
+ * - 延長成功時は「最終通知日」「リマインダー送信日」をクリアし、
+ *   新しい期限に対して通知・リマインダーが再送されるようにする
+ */
+function renewLending_(bookId, rowNumber, userId, lendingDate) {
+  try {
+    const id = bookId ? bookId.toString().trim() : "";
+    if (!id) {
+      return { success: false, message: "書籍IDが指定されていません。" };
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    if (!lendingSheet) {
+      throw new Error("貸出記録シートが見つかりません。");
+    }
+
+    // 設定から貸出期間と延長上限を取得
+    let lendingDays = 14;
+    let maxRenewals = 1;
+    try {
+      const settings = getLibrarySettings();
+      if (settings && settings.lendingDays) {
+        lendingDays = settings.lendingDays;
+      }
+      if (settings && settings.maxRenewals !== undefined && settings.maxRenewals !== "") {
+        const m = Number(settings.maxRenewals);
+        if (!isNaN(m)) {
+          maxRenewals = Math.floor(m);
+        }
+      }
+    } catch (e) {
+      console.log("設定の取得に失敗したため、デフォルト値(貸出期間14日・延長上限1回)を使用します:", e);
+    }
+    if (maxRenewals <= 0) {
+      return { success: false, message: "貸出延長は設定で無効になっています(maxRenewals=0)。" };
+    }
+
+    const data = lendingSheet.getDataRange().getValues();
+
+    // 「延長回数」列をヘッダー名で特定する(最終通知日と同じ流儀。
+    // H列=返却日時は予約済みのため最低でもI列以降に追加する)
+    let renewCol = data.length > 0 ? data[0].indexOf("延長回数") + 1 : 0; // 1始まり
+    if (renewCol === 0) {
+      renewCol = Math.max((data.length > 0 ? data[0].length : 8) + 1, 9);
+      if (data.length > 0 && (data[0].length < 8 || !data[0][7])) {
+        lendingSheet.getRange(1, 8).setValue("返却日時");
+      }
+      lendingSheet.getRange(1, renewCol).setValue("延長回数");
+    }
+
+    // 対象行の特定。クライアントが行番号を持っている場合はそれを使い、
+    // 書籍ID・未返却であることを検証する(同一管理番号の未返却が重複する
+    // 異常データでも、クリックした行以外を延長しないため。行番号は返却処理や
+    // アーカイブでずれることがあるので、検証に失敗したら再検索を促す)
+    let targetIndex = -1;
+    const parsedRowNumber = parseInt(rowNumber, 10);
+    if (!isNaN(parsedRowNumber) && parsedRowNumber >= 2) {
+      if (parsedRowNumber > data.length) {
+        return { success: false, message: "貸出記録が更新されています。もう一度検索してから延長してください。" };
+      }
+      const candidate = data[parsedRowNumber - 1];
+      const candidateId = candidate[0] ? candidate[0].toString().trim() : "";
+      // 書籍ID+未返却だけでは、アーカイブ等の行ずれと重複未返却が重なった場合に
+      // 別の行を誤って受理し得るため、利用者IDと貸出日時も照合する
+      const candidateUserId = candidate[2] ? candidate[2].toString().trim().toLowerCase() : "";
+      const expectedUserId = userId ? userId.toString().trim().toLowerCase() : "";
+      const candidateLendingDate = (candidate[4] instanceof Date && !isNaN(candidate[4]))
+        ? candidate[4].toISOString()
+        : "";
+      const expectedLendingDate = lendingDate ? lendingDate.toString().trim() : "";
+      if (candidateId !== id || candidate[6] !== "未返却" ||
+          (expectedUserId !== "" && candidateUserId !== expectedUserId) ||
+          (expectedLendingDate !== "" && candidateLendingDate !== expectedLendingDate)) {
+        return { success: false, message: "貸出記録が更新されています。もう一度検索してから延長してください。" };
+      }
+      targetIndex = parsedRowNumber - 1;
+    } else {
+      // 行番号なしの呼び出しは書籍ID(管理番号)で探す(未返却は本来1件のみ)
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][6] === "未返却" && data[i][0] && data[i][0].toString().trim() === id) {
+          targetIndex = i;
+          break;
+        }
+      }
+      if (targetIndex === -1) {
+        return { success: false, message: `書籍ID ${id} の未返却の貸出記録が見つかりません。` };
+      }
+    }
+
+    const row = data[targetIndex];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDateValue = row[5];
+    // 延長の起点は「今日」と「現在の返却予定日」の遅い方にする
+    // (今日起点だと、期限まで貸出期間ちょうど残っている本は延長しても期限が
+    //  変わらず、期限がさらに先の本は逆に縮んでしまうため。延長は必ず期限を延ばす)
+    let baseDate = today;
+    if (dueDateValue instanceof Date && !isNaN(dueDateValue)) {
+      const dueDate = new Date(dueDateValue);
+      dueDate.setHours(0, 0, 0, 0);
+      if (dueDate < today) {
+        return { success: false, message: "返却期限を過ぎているため延長できません。いったん返却してください。" };
+      }
+      if (dueDate > baseDate) {
+        baseDate = dueDate;
+      }
+    }
+
+    const currentRenewals = row.length > renewCol - 1 ? (Number(row[renewCol - 1]) || 0) : 0;
+    if (currentRenewals >= maxRenewals) {
+      return { success: false, message: `延長は${maxRenewals}回までです(既に${currentRenewals}回延長済み)。` };
+    }
+
+    const newDueDate = new Date(baseDate.getTime() + lendingDays * 24 * 60 * 60 * 1000);
+    lendingSheet.getRange(targetIndex + 1, 6).setValue(newDueDate);
+    lendingSheet.getRange(targetIndex + 1, renewCol).setValue(currentRenewals + 1);
+
+    // 旧期限に対する通知記録をクリアし、新期限で再送されるようにする
+    ["最終通知日", "リマインダー送信日"].forEach(header => {
+      const col = data.length > 0 ? data[0].indexOf(header) + 1 : 0;
+      if (col > 0) {
+        lendingSheet.getRange(targetIndex + 1, col).setValue("");
+      }
+    });
+
+    const newDueStr = Utilities.formatDate(newDueDate, "Asia/Tokyo", "yyyy年MM月dd日");
+    console.log(`貸出延長: 書籍ID ${id} の返却予定日を ${newDueStr} に更新(${currentRenewals + 1}回目)`);
+    return {
+      success: true,
+      message: `「${row[1] || id}」の返却期限を${newDueStr}まで延長しました(${currentRenewals + 1}回目/最大${maxRenewals}回)。`,
+      newDueDate: toIsoString_(newDueDate)
+    };
+  } catch (error) {
+    console.error(`貸出延長中にエラーが発生しました: ${error}`);
+    return { success: false, message: `貸出延長に失敗しました: ${error.message}` };
+  }
+}
+
+/**
  * 蔵書を横断検索する関数(読み取り専用)。
  * 管理番号・ISBN・書籍名・著者名・出版社の部分一致(大文字小文字無視)で検索する。
  * ISBNはハイフン有無を正規化して照合し、廃棄済みの本は結果から除外する。
@@ -2728,7 +2888,7 @@ function backupReturnedData_(targetSpreadsheetId) {
       const overlap = Math.min(targetHeaders.length, sourceHeaders.length);
       // 片側にしか存在しない列は通知系の管理列(最終通知日・リマインダー送信日)のみ許容する
       // (無関係な列を持つシートへの誤追記や、返却日時が別名列に紛れ込むのを防ぐ)
-      const allowedExtraColumns = ["最終通知日", "リマインダー送信日"];
+      const allowedExtraColumns = ["最終通知日", "リマインダー送信日", "延長回数"];
       const extraColumnsAllowed =
         targetHeaders.slice(overlap).every(h => allowedExtraColumns.indexOf(h) !== -1) &&
         sourceHeaders.slice(overlap).every(h => allowedExtraColumns.indexOf(h) !== -1);
@@ -3153,6 +3313,7 @@ function ensureSettingsSheet_() {
     const defaultSettings = [
       ["lendingDays", "14", "貸出期間（日数）", new Date()],
       ["maxBooks", "5", "一人あたりの最大貸出冊数", new Date()],
+      ["maxRenewals", "1", "貸出延長の上限回数", new Date()],
       ["reminderDays", "3", "返却リマインダー（日前）", new Date()],
       ["enableEmail", "true", "メール通知を有効にする", new Date()],
       ["enableOverdue", "true", "延滞通知を有効にする", new Date()],
@@ -3277,6 +3438,7 @@ function getSettingDescription(key) {
   const descriptions = {
     lendingDays: "貸出期間（日数）",
     maxBooks: "一人あたりの最大貸出冊数",
+    maxRenewals: "貸出延長の上限回数",
     reminderDays: "返却リマインダー（日前）",
     enableEmail: "メール通知を有効にする",
     enableOverdue: "延滞通知を有効にする",
