@@ -107,6 +107,10 @@ function doGet(e) {
 
   const htmlOutput = HtmlService.createTemplateFromFile(page).evaluate()
       .setTitle(title)
+      // GASはページをGoogleのラッパー(iframe)内で配信するため、各HTML内の
+      // <meta name="viewport">は効かない。ここで付与しないとスマホが約980pxの
+      // デスクトップ仮想幅で描画し、メディアクエリが誤判定してUIが極小になる
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       // 外部サイトからの埋め込み(クリックジャッキング)を防ぐためGoogle標準の制限に戻す。
       // CDNからのライブラリ読み込み(QuaggaJS等)はこの設定と無関係で影響しない
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
