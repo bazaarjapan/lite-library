@@ -3389,6 +3389,16 @@ function createOverdueReport() {
  * @return {object} 処理結果 {success: boolean, sent: number, skipped: number, failed: number, message: string}
  */
 function sendOverdueNotifications() {
+  // トリガーとリマインダーが同時に走って貸出記録のヘッダー列
+  // (最終通知日/リマインダー送信日)を取り合わないよう直列化する。
+  // ロックが取れない場合はスキップし、翌日の実行で再送される
+  return runWithScriptLock_(
+    () => sendOverdueNotifications_(),
+    { success: false, sent: 0, skipped: 0, failed: 0, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function sendOverdueNotifications_() {
   try {
     const settings = getLibrarySettings();
     if (settings.enableOverdue === false) {
@@ -3639,6 +3649,15 @@ function removeOverdueTriggerFromMenu() {
  * @return {object} 処理結果 {success: boolean, sent: number, skipped: number, failed: number, message: string}
  */
 function sendReturnReminders() {
+  // 延滞通知と同時に走って貸出記録のヘッダー列を取り合わないよう直列化する。
+  // ロックが取れない場合はスキップし、翌日の実行で再送される
+  return runWithScriptLock_(
+    () => sendReturnReminders_(),
+    { success: false, sent: 0, skipped: 0, failed: 0, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function sendReturnReminders_() {
   try {
     const settings = getLibrarySettings();
     if (settings.enableEmail === false) {
@@ -3793,7 +3812,9 @@ function buildReminderMailBody_(settings, values) {
 }
 
 /**
- * 返却リマインダーの時間主導トリガー(毎日9時台)を設置する関数(冪等)
+ * 返却リマインダーの時間主導トリガー(毎日10時台)を設置する関数(冪等)。
+ * 延滞通知(9時台)と時間帯をずらし、貸出記録のヘッダー列作成が並行しないようにする
+ * (両ハンドラーのスクリプトロックに加えた二重の防御)。
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function installReminderTrigger() {
@@ -3802,9 +3823,9 @@ function installReminderTrigger() {
     ScriptApp.newTrigger('sendReturnReminders')
       .timeBased()
       .everyDays(1)
-      .atHour(9)
+      .atHour(10)
       .create();
-    const msg = "返却リマインダートリガーを設置しました(毎日9時台に実行)。";
+    const msg = "返却リマインダートリガーを設置しました(毎日10時台に実行)。";
     console.log(msg);
     return { success: true, message: msg };
   } catch (error) {
@@ -3839,7 +3860,7 @@ function removeReminderTrigger() {
 
 /**
  * 運用に必要な時間主導トリガーを一括で設置する関数(冪等)。
- * 延滞通知(毎日9時)+返却リマインダー(毎日9時)+月次アーカイブ(毎月1日3時)。
+ * 延滞通知(毎日9時)+返却リマインダー(毎日10時)+月次アーカイブ(毎月1日3時)。
  * 月次アーカイブは backupSpreadsheetId が設定済みかつ疎通確認(実バックアップ1回)に
  * 成功した場合のみ設置する(未設定のまま設置すると毎月黙ってスキップされるため)。
  * @return {object} 処理結果 {success: boolean, message: string}
