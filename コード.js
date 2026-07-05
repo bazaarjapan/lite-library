@@ -688,15 +688,15 @@ function cancelActiveReservationsForUser_(userId) {
 }
 
 /**
- * 本(管理番号+ISBN)に一致する最先頭(最古)の予約中の予約を返す補助関数。
+ * 本(管理番号+ISBN)に一致する有効な予約を予約順(行順=最古優先)ですべて返す補助関数。
  * 予約キー規約: 予約DB.書籍ID は正規化ISBN(なければ管理番号)なので、両方で照合する。
  * @param {Array} actives - loadActiveReservations_ の actives
  * @param {string} managementNumber - 管理番号
  * @param {string} isbn - ISBN(未正規化でもよい・空可)
- * @return {object|null} 一致する予約、なければ null
+ * @return {Array} 一致する予約の配列(予約順)
  */
-function findReservationForBook_(actives, managementNumber, isbn) {
-  if (!actives || actives.length === 0) return null;
+function findReservationsForBook_(actives, managementNumber, isbn) {
+  if (!actives || actives.length === 0) return [];
   const keys = [];
   if (managementNumber) {
     keys.push(managementNumber.toString().trim());
@@ -705,13 +705,17 @@ function findReservationForBook_(actives, managementNumber, isbn) {
   if (normalized) {
     keys.push(normalized);
   }
-  if (keys.length === 0) return null;
-  for (const reservation of actives) { // 行順=予約順(最古優先)
-    if (keys.indexOf(reservation.bookKey) !== -1) {
-      return reservation;
-    }
-  }
-  return null;
+  if (keys.length === 0) return [];
+  return actives.filter(reservation => keys.indexOf(reservation.bookKey) !== -1);
+}
+
+/**
+ * 本に一致する最先頭(最古)の予約を返す補助関数(findReservationsForBook_ の単数版)。
+ * @return {object|null} 一致する予約、なければ null
+ */
+function findReservationForBook_(actives, managementNumber, isbn) {
+  const matches = findReservationsForBook_(actives, managementNumber, isbn);
+  return matches.length > 0 ? matches[0] : null;
 }
 
 /**
@@ -794,31 +798,34 @@ function createReservation_(bookId, userId) {
       return { success: false, message: `「${title}」は廃棄済みのため予約できません。` };
     }
 
-    // 在庫チェック: 同一ISBNのいずれかのコピー(ISBNなしなら当該コピー)に在庫があれば予約不要。
+    const reservationKey = isbn || managementNumber;
+    const sheet = ensureReservationSheet_();
+    const actives = loadActiveReservations_().actives;
+
+    // 在庫チェック: 「在庫のコピー数 > 取り置き済み予約数」の場合のみ貸出を案内する。
+    // 取り置き中の予約は書籍DB上は在庫のコピーを1冊占有しているため、
+    // 見かけの在庫から差し引かないと、全コピーが取り置き済みのタイトルに
+    // 新しく予約で並べなくなる(貸出も予約ゲートに弾かれ、詰む)。
     // 状態セルが空欄の行は他コード(貸出の status || "在庫" 等)と同様に在庫として扱う
     const normalizeBookStatus_ = value => {
       const status = (value === null || value === undefined) ? "" : value.toString().trim();
       return status === "" ? "在庫" : status;
     };
-    let hasAvailableCopy = false;
+    let availableCount = 0;
     if (isbn) {
       const copyRows = findRowsByNormalizedIsbn_(bookSheet, 2, isbn);
       for (const rowNum of copyRows) {
         if (normalizeBookStatus_(bookSheet.getRange(rowNum, 7).getValue()) === "在庫") {
-          hasAvailableCopy = true;
-          break;
+          availableCount++;
         }
       }
     } else {
-      hasAvailableCopy = normalizeBookStatus_(bookValues[6]) === "在庫";
+      availableCount = normalizeBookStatus_(bookValues[6]) === "在庫" ? 1 : 0;
     }
-    if (hasAvailableCopy) {
+    const heldCount = actives.filter(r => r.bookKey === reservationKey && r.status === "取り置き中").length;
+    if (availableCount > heldCount) {
       return { success: false, message: `「${title}」は在庫があります。予約せずにそのまま貸出できます。` };
     }
-
-    const reservationKey = isbn || managementNumber;
-    const sheet = ensureReservationSheet_();
-    const actives = loadActiveReservations_().actives;
 
     // 同一キー×同一利用者の重複予約を拒否
     const duplicate = actives.find(r =>
@@ -1913,19 +1920,23 @@ function processBulkLending_(bulkData) {
         return;
       }
 
-      // 予約チェック: 予約中の本は最先頭の予約者本人にのみ貸し出す。
-      // 成立した予約はプールから消費し、同一タイトルの複本を同時貸出しても
-      // キューの次の予約者(別の利用者)の取り置きを追い越せないようにする
-      const reservation = findReservationForBook_(reservationState.actives, lendId, book.isbn || "");
-      if (reservation) {
-        if (reservation.userId.toLowerCase() !== normalizedUserId) {
+      // 予約チェック: この本に有効な予約があれば、借りる本人の予約を優先して照合する。
+      // 複本が別々の利用者に取り置きされている場合でも、本人の予約(取り置き中/予約中)が
+      // あればそれを消費して貸出を許可する(最古の予約者との比較だけだと、2番目に
+      // 取り置きされた利用者が先に来店したとき正当な貸出を拒否してしまう)。
+      // 本人の予約がなければ最先頭の予約者名を示してスキップする。
+      // 成立した予約はプールから消費し、複本の同時貸出でも他の予約を追い越せないようにする
+      const matchingReservations = findReservationsForBook_(reservationState.actives, lendId, book.isbn || "");
+      if (matchingReservations.length > 0) {
+        const ownReservation = matchingReservations.find(r => r.userId.toLowerCase() === normalizedUserId);
+        if (!ownReservation) {
           errorCount++;
-          errorMessages.push(`${lendId}（予約あり: ${reservation.userName} さんが予約中）`);
-          console.warn(`貸出スキップ: 書籍ID ${lendId} は他の利用者(${reservation.userId})が予約中です。`);
+          errorMessages.push(`${lendId}（予約あり: ${matchingReservations[0].userName} さんが予約中）`);
+          console.warn(`貸出スキップ: 書籍ID ${lendId} は他の利用者(${matchingReservations[0].userId})が予約中です。`);
           return;
         }
-        reservationsToFulfill.push(reservation);
-        reservationState.actives = reservationState.actives.filter(r => r !== reservation);
+        reservationsToFulfill.push(ownReservation);
+        reservationState.actives = reservationState.actives.filter(r => r !== ownReservation);
       }
 
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
