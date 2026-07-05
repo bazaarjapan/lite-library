@@ -2046,7 +2046,9 @@ function onOpen() {
       .addItem('状態の整合性チェック・修復', 'checkBookStatusConsistencyFromMenu')
       .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
       .addItem('貸出状況レポート作成', 'generateLendingReport')
-      .addItem('返却済データのバックアップ', 'showBackupDialog');
+      .addItem('返却済データのバックアップ', 'showBackupDialog')
+      .addItem('トリガー一括設置(延滞通知+返却リマインダー+月次アーカイブ)', 'installAllTriggersFromMenu')
+      .addItem('トリガー一括解除', 'removeAllTriggersFromMenu');
 
   // 破壊的な開発用メニューは、設定DBの operationMode が development の
   // ときだけ表示する(本番データの誤リセット防止。設定読み取りに失敗しても
@@ -3189,6 +3191,7 @@ function getSettingDescription(key) {
     operationMode: "運用モード",
     notifyIntervalDays: "延滞通知の再送間隔（日数）",
     overdueTemplate: "延滞通知メールの文面テンプレート",
+    reminderTemplate: "返却リマインダーメールの文面テンプレート",
     backupSpreadsheetId: "返却済データのバックアップ先スプレッドシートID"
   };
   
@@ -3626,6 +3629,252 @@ function installOverdueTriggerFromMenu() {
 function removeOverdueTriggerFromMenu() {
   const result = removeOverdueTrigger();
   SpreadsheetApp.getUi().alert('延滞通知トリガー解除', result.message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * 返却期限前のリマインダーメールを送信する関数(トリガー安全: UIを一切使わない)
+ * 未返却かつ返却予定日が今日〜reminderDays日後の貸出に、1貸出につき1回だけ送信する。
+ * 重複送信は「リマインダー送信日」列(ヘッダー名で特定・なければ末尾に追加)で防ぐ。
+ * @return {object} 処理結果 {success: boolean, sent: number, skipped: number, failed: number, message: string}
+ */
+function sendReturnReminders() {
+  try {
+    const settings = getLibrarySettings();
+    if (settings.enableEmail === false) {
+      const msg = "リマインダーはメール通知の設定で無効になっています(enableEmail=false)。";
+      console.log(msg);
+      return { success: true, sent: 0, skipped: 0, failed: 0, message: msg };
+    }
+    const reminderDays = Number(settings.reminderDays);
+    if (!reminderDays || reminderDays <= 0) {
+      const msg = "reminderDays が未設定または0以下のためリマインダーをスキップしました。";
+      console.log(msg);
+      return { success: true, sent: 0, skipped: 0, failed: 0, message: msg };
+    }
+    const libraryName = settings.libraryName || "図書館";
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    const userSheet = ss.getSheetByName("利用者DB");
+    if (!lendingSheet) {
+      throw new Error("貸出記録シートが見つかりません。");
+    }
+    if (!userSheet) {
+      throw new Error("利用者DBシートが見つかりません。");
+    }
+
+    // 利用者ID → メールアドレスの対応表(sendOverdueNotifications と同じ小文字キー)
+    const userData = userSheet.getDataRange().getValues();
+    const emailByUserId = {};
+    for (let i = 1; i < userData.length; i++) {
+      const userId = userData[i][0] ? userData[i][0].toString().trim().toLowerCase() : "";
+      const email = userData[i][2] ? userData[i][2].toString().trim() : "";
+      if (userId && email) {
+        emailByUserId[userId] = email;
+      }
+    }
+
+    const data = lendingSheet.getDataRange().getValues();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const reminderLimit = new Date(today.getTime() + reminderDays * 24 * 60 * 60 * 1000);
+
+    // 「リマインダー送信日」列をヘッダー名で特定する(最終通知日と同じ流儀。
+    // H列=返却日時は予約済みのため最低でもI列以降に追加する)
+    let reminderCol = data.length > 0 ? data[0].indexOf("リマインダー送信日") + 1 : 0; // 1始まり
+    if (reminderCol === 0) {
+      reminderCol = Math.max((data.length > 0 ? data[0].length : 8) + 1, 9);
+      if (data.length > 0 && (data[0].length < 8 || !data[0][7])) {
+        lendingSheet.getRange(1, 8).setValue("返却日時");
+      }
+      lendingSheet.getRange(1, reminderCol).setValue("リマインダー送信日");
+    }
+
+    let sent = 0;
+    let skipped = 0;
+    let failed = 0;
+    let quotaExhausted = false;
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (row[6] !== "未返却") continue;
+      const dueDateValue = row[5];
+      if (!(dueDateValue instanceof Date) || isNaN(dueDateValue)) continue;
+      const dueDate = new Date(dueDateValue);
+      dueDate.setHours(0, 0, 0, 0);
+      if (dueDate < today) continue; // 延滞済みは延滞通知に任せる
+      if (dueDate > reminderLimit) continue; // まだリマインド対象期間でない
+
+      // 同一貸出への重複送信防止(1貸出1回)
+      const alreadySent = row.length > reminderCol - 1 ? row[reminderCol - 1] : "";
+      if (alreadySent instanceof Date && !isNaN(alreadySent)) {
+        skipped++;
+        continue;
+      }
+
+      const userId = row[2] ? row[2].toString().trim() : "";
+      const email = emailByUserId[userId.toLowerCase()];
+      if (!email) {
+        console.log(`利用者 ${userId} のメールアドレスが未登録のためリマインダーをスキップします。`);
+        skipped++;
+        continue;
+      }
+
+      // メール送信クォータを確認し、残量がなければ以降の送信を打ち切る
+      // (リマインダー送信日が未記入のまま残るため、翌日の実行で再送される)
+      if (MailApp.getRemainingDailyQuota() <= 0) {
+        console.warn("メール送信の1日あたりのクォータを使い切ったため、残りのリマインダーを中断します。");
+        skipped++;
+        quotaExhausted = true;
+        break;
+      }
+
+      const daysLeft = Math.floor((dueDate - today) / (1000 * 60 * 60 * 24));
+      const body = buildReminderMailBody_(settings, {
+        userName: row[3] || "利用者",
+        bookTitle: row[1] || "書籍",
+        dueDate: Utilities.formatDate(dueDateValue, "Asia/Tokyo", "yyyy年MM月dd日"),
+        daysLeft: daysLeft,
+        libraryName: libraryName
+      });
+
+      try {
+        MailApp.sendEmail({
+          to: email,
+          subject: `【${libraryName}】返却期限が近づいています`,
+          body: body
+        });
+        lendingSheet.getRange(i + 1, reminderCol).setValue(new Date());
+        sent++;
+        console.log(`返却リマインダー送信: ${userId} (${email}) - ${row[1]}`);
+      } catch (mailError) {
+        console.error(`返却リマインダーの送信に失敗しました (${email}): ${mailError}`);
+        failed++;
+      }
+    }
+
+    const message = `返却リマインダー処理完了: 送信 ${sent}件 / スキップ ${skipped}件 / 失敗 ${failed}件` +
+      (quotaExhausted ? "(メール送信クォータ上限のため中断。残りは翌日の実行で送信されます)" : "");
+    console.log(message);
+    return { success: true, sent: sent, skipped: skipped, failed: failed, message: message };
+  } catch (error) {
+    console.error(`返却リマインダー処理中にエラーが発生しました: ${error}`);
+    return { success: false, sent: 0, skipped: 0, failed: 0, message: `返却リマインダー処理に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 返却リマインダーメールの本文を組み立てる補助関数
+ * 設定DBの reminderTemplate があればそれを使用し、プレースホルダー
+ * {userName} {bookTitle} {dueDate} {daysLeft} {libraryName} を置換する。
+ * @param {object} settings - 図書館設定
+ * @param {object} values - 置換値
+ * @return {string} メール本文
+ */
+function buildReminderMailBody_(settings, values) {
+  const defaultTemplate =
+    "{userName} 様\n\n" +
+    "{libraryName}をご利用いただきありがとうございます。\n" +
+    "貸出中の以下の書籍の返却期限が近づいています。\n\n" +
+    "書籍名: {bookTitle}\n" +
+    "返却期限: {dueDate}(あと{daysLeft}日)\n\n" +
+    "引き続きご利用の場合も、期限までに一度カウンターへお持ちください。\n\n" +
+    "{libraryName}";
+  const template = (typeof settings.reminderTemplate === "string" && settings.reminderTemplate.trim() !== "")
+    ? settings.reminderTemplate
+    : defaultTemplate;
+  return template
+    .replace(/\{userName\}/g, values.userName)
+    .replace(/\{bookTitle\}/g, values.bookTitle)
+    .replace(/\{dueDate\}/g, values.dueDate)
+    .replace(/\{daysLeft\}/g, String(values.daysLeft))
+    .replace(/\{libraryName\}/g, values.libraryName);
+}
+
+/**
+ * 返却リマインダーの時間主導トリガー(毎日9時台)を設置する関数(冪等)
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function installReminderTrigger() {
+  try {
+    removeReminderTrigger(); // 二重設置を防ぐ
+    ScriptApp.newTrigger('sendReturnReminders')
+      .timeBased()
+      .everyDays(1)
+      .atHour(9)
+      .create();
+    const msg = "返却リマインダートリガーを設置しました(毎日9時台に実行)。";
+    console.log(msg);
+    return { success: true, message: msg };
+  } catch (error) {
+    console.error(`リマインダートリガー設置中にエラーが発生しました: ${error}`);
+    return { success: false, message: `リマインダートリガー設置に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 返却リマインダーの時間主導トリガーを解除する関数
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function removeReminderTrigger() {
+  try {
+    let removed = 0;
+    ScriptApp.getProjectTriggers().forEach(trigger => {
+      if (trigger.getHandlerFunction() === 'sendReturnReminders') {
+        ScriptApp.deleteTrigger(trigger);
+        removed++;
+      }
+    });
+    const msg = removed > 0
+      ? `返却リマインダートリガーを${removed}件解除しました。`
+      : "設置済みの返却リマインダートリガーはありません。";
+    console.log(msg);
+    return { success: true, message: msg };
+  } catch (error) {
+    console.error(`リマインダートリガー解除中にエラーが発生しました: ${error}`);
+    return { success: false, message: `リマインダートリガー解除に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 運用に必要な時間主導トリガーを一括で設置する関数(冪等)。
+ * 延滞通知(毎日9時)+返却リマインダー(毎日9時)+月次アーカイブ(毎月1日3時)。
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function installAllTriggers() {
+  const results = [installOverdueTrigger(), installReminderTrigger(), installArchiveTrigger()];
+  return {
+    success: results.every(r => r.success),
+    message: results.map(r => r.message).join("\n")
+  };
+}
+
+/**
+ * 運用の時間主導トリガーを一括で解除する関数
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function removeAllTriggers() {
+  const results = [removeOverdueTrigger(), removeReminderTrigger(), removeArchiveTrigger()];
+  return {
+    success: results.every(r => r.success),
+    message: results.map(r => r.message).join("\n")
+  };
+}
+
+/**
+ * メニューからトリガーを一括設置し、結果をダイアログ表示する関数
+ */
+function installAllTriggersFromMenu() {
+  const result = installAllTriggers();
+  SpreadsheetApp.getUi().alert('トリガー一括設置', result.message, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * メニューからトリガーを一括解除し、結果をダイアログ表示する関数
+ */
+function removeAllTriggersFromMenu() {
+  const result = removeAllTriggers();
+  SpreadsheetApp.getUi().alert('トリガー一括解除', result.message, SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 /**
