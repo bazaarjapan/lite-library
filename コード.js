@@ -900,7 +900,9 @@ function buildReservationNoticesForReturns_(returnedBookIds) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const bookSheet = ss.getSheetByName("書籍DB");
     const notices = [];
-    const noticedReservationIds = new Set(); // 同一返却処理内の重複案内を防ぐ
+    // 消費式のプール: 案内した予約は除外し、同一タイトルの複本を同時返却した場合に
+    // 2冊目以降が予約キューの次の予約者に割り当たるようにする
+    let reservationPool = actives;
     let settings = null;
     let emailByUserId = null; // 必要になったときだけ利用者DBを読む
 
@@ -915,9 +917,9 @@ function buildReservationNoticesForReturns_(returnedBookIds) {
           isbn = value ? value.toString() : "";
         }
       }
-      const reservation = findReservationForBook_(actives, trimmedId, isbn);
-      if (!reservation || noticedReservationIds.has(reservation.reservationId)) return;
-      noticedReservationIds.add(reservation.reservationId);
+      const reservation = findReservationForBook_(reservationPool, trimmedId, isbn);
+      if (!reservation) return;
+      reservationPool = reservationPool.filter(r => r !== reservation);
       notices.push(`⚠ 「${reservation.bookTitle}」は ${reservation.userName} さん(ID: ${reservation.userId})が予約中です。取り置きしてください。`);
 
       // 予約者への入荷メール(ベストエフォート)
@@ -1879,7 +1881,9 @@ function processBulkLending_(bulkData) {
         return;
       }
 
-      // 予約チェック: 予約中の本は最先頭の予約者本人にのみ貸し出す
+      // 予約チェック: 予約中の本は最先頭の予約者本人にのみ貸し出す。
+      // 成立した予約はプールから消費し、同一タイトルの複本を同時貸出しても
+      // キューの次の予約者(別の利用者)の取り置きを追い越せないようにする
       const reservation = findReservationForBook_(reservationState.actives, lendId, book.isbn || "");
       if (reservation) {
         if (reservation.userId.toLowerCase() !== normalizedUserId) {
@@ -1889,6 +1893,7 @@ function processBulkLending_(bulkData) {
           return;
         }
         reservationsToFulfill.push(reservation);
+        reservationState.actives = reservationState.actives.filter(r => r !== reservation);
       }
 
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
