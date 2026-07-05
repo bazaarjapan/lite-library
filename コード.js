@@ -617,6 +617,54 @@ function renewLending_(bookId, rowNumber, userId, lendingDate) {
 }
 
 /**
+ * メニューのミニダッシュボード用に本日の稼働状況を集計する関数(読み取り専用)。
+ * @return {object} {success: boolean, todayLent: number, todayReturned: number,
+ *                   activeLoans: number, overdue: number}
+ */
+function getDashboardSummary() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    if (!lendingSheet) {
+      throw new Error("貸出記録シートが見つかりません。");
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isToday = value => {
+      if (!(value instanceof Date) || isNaN(value)) return false;
+      const day = new Date(value);
+      day.setHours(0, 0, 0, 0);
+      return day.getTime() === today.getTime();
+    };
+
+    // A:書籍ID, E:貸出日時, F:返却予定日, G:返却状況, H:返却日時
+    const lastRow = lendingSheet.getLastRow();
+    const data = lastRow > 1 ? lendingSheet.getRange(2, 1, lastRow - 1, 8).getValues() : [];
+    let todayLent = 0;
+    let todayReturned = 0;
+    let activeLoans = 0;
+    let overdue = 0;
+    data.forEach(row => {
+      if (isToday(row[4])) todayLent++;
+      if (isToday(row[7])) todayReturned++;
+      if (row[6] === "未返却") {
+        activeLoans++;
+        const dueDate = row[5];
+        if (dueDate instanceof Date && !isNaN(dueDate)) {
+          const due = new Date(dueDate);
+          due.setHours(0, 0, 0, 0);
+          if (due < today) overdue++;
+        }
+      }
+    });
+    return { success: true, todayLent: todayLent, todayReturned: todayReturned, activeLoans: activeLoans, overdue: overdue };
+  } catch (error) {
+    console.error(`ダッシュボード集計中にエラーが発生しました: ${error}`);
+    return { success: false, todayLent: 0, todayReturned: 0, activeLoans: 0, overdue: 0 };
+  }
+}
+
+/**
  * 棚卸し用の蔵書スナップショットを取得する関数(読み取り専用)。
  * 廃棄(論理削除)を除く全蔵書を、貸出記録の未返却を加味した状態付きで返す。
  * 照合はクライアント側で行い、サーバーへの書き込みは一切しない。
