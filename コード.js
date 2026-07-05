@@ -1130,23 +1130,35 @@ function processBulkLending_(bulkData) {
 
     // 貸出記録から未返却の書籍IDを収集する
     // (旧レイアウトや過去データで書籍DBのG列が「在庫」のまま貸出中の本があっても二重貸出を防ぐ)
+    // あわせて、この利用者の未返却冊数を数える(貸出上限チェック用。
+    // 利用者IDの照合は getUserRentals と同じく trim + 大文字小文字無視)
     const lendingData = lendingSheet.getDataRange().getValues();
     const activeLoanIds = new Set();
+    const normalizedUserId = bulkData.userId.toString().trim().toLowerCase();
+    let userActiveLoanCount = 0;
     for (let i = 1; i < lendingData.length; i++) {
       if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
         activeLoanIds.add(lendingData[i][0].toString().trim());
+        const rowUserId = lendingData[i][2] ? lendingData[i][2].toString().trim().toLowerCase() : "";
+        if (rowUserId === normalizedUserId) {
+          userActiveLoanCount++;
+        }
       }
     }
 
-    // 設定から貸出期間を取得
+    // 設定から貸出期間と一人あたりの最大貸出冊数を取得
     let lendingDays = 14; // デフォルト値
+    let maxBooks = 0; // 0以下は上限チェックなし(設定が読めない場合に貸出業務を止めない)
     try {
       const settings = getLibrarySettings();
       if (settings && settings.lendingDays) {
         lendingDays = settings.lendingDays;
       }
+      if (settings && typeof settings.maxBooks === "number" && settings.maxBooks > 0) {
+        maxBooks = Math.floor(settings.maxBooks);
+      }
     } catch (e) {
-      console.log("設定の取得に失敗したため、デフォルトの貸出期間を使用します:", e);
+      console.log("設定の取得に失敗したため、デフォルトの貸出期間を使用します(貸出上限チェックはスキップ):", e);
     }
 
     const lendingDate = new Date(); // 現在日時を貸出日時とする
@@ -1200,6 +1212,15 @@ function processBulkLending_(bulkData) {
         errorCount++;
         errorMessages.push(`${lendId}（未返却の貸出記録あり）`);
         console.warn(`貸出スキップ: 書籍ID ${lendId} には未返却の貸出記録が存在します。`);
+        return;
+      }
+
+      // 貸出上限チェック: 未返却冊数 + 今回のリクエストで確定済みの冊数が
+      // 設定 maxBooks に達していたらこの本は貸し出さない(他の理由で弾かれた本は数えない)
+      if (maxBooks > 0 && userActiveLoanCount + successCount >= maxBooks) {
+        errorCount++;
+        errorMessages.push(`${trimmedBookId}（貸出上限超過: 未返却${userActiveLoanCount}冊+今回${successCount}冊/最大${maxBooks}冊）`);
+        console.warn(`貸出スキップ: 利用者 ${bulkData.userId} は貸出上限（${maxBooks}冊）に達しています。`);
         return;
       }
 
