@@ -744,7 +744,18 @@ function createReservation_(bookId, userId) {
     const normalizedInputIsbn = isValidIsbn_(id) ? normalizeIsbn_(id) : "";
     if (bookRowNum === -1 && normalizedInputIsbn) {
       const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedInputIsbn);
-      bookRowNum = isbnRows.length > 0 ? isbnRows[0] : -1;
+      // 廃棄(論理削除)済みのコピーは行順で先にあってもスキップし、有効なコピーを採用する
+      for (const candidateRowNum of isbnRows) {
+        const candidateStatus = (bookSheet.getRange(candidateRowNum, 7).getValue() || "").toString().trim();
+        if (candidateStatus !== "廃棄") {
+          bookRowNum = candidateRowNum;
+          break;
+        }
+      }
+      // 全コピーが廃棄の場合は先頭を採用し、後段の廃棄チェックで拒否させる
+      if (bookRowNum === -1 && isbnRows.length > 0) {
+        bookRowNum = isbnRows[0];
+      }
     }
     if (bookRowNum === -1) {
       return { success: false, message: `書籍 ${id} が見つかりません。` };
@@ -757,19 +768,23 @@ function createReservation_(bookId, userId) {
       return { success: false, message: `「${title}」は廃棄済みのため予約できません。` };
     }
 
-    // 在庫チェック: 同一ISBNのいずれかのコピー(ISBNなしなら当該コピー)に在庫があれば予約不要
+    // 在庫チェック: 同一ISBNのいずれかのコピー(ISBNなしなら当該コピー)に在庫があれば予約不要。
+    // 状態セルが空欄の行は他コード(貸出の status || "在庫" 等)と同様に在庫として扱う
+    const normalizeBookStatus_ = value => {
+      const status = (value === null || value === undefined) ? "" : value.toString().trim();
+      return status === "" ? "在庫" : status;
+    };
     let hasAvailableCopy = false;
     if (isbn) {
       const copyRows = findRowsByNormalizedIsbn_(bookSheet, 2, isbn);
       for (const rowNum of copyRows) {
-        const status = bookSheet.getRange(rowNum, 7).getValue();
-        if ((status || "").toString().trim() === "在庫") {
+        if (normalizeBookStatus_(bookSheet.getRange(rowNum, 7).getValue()) === "在庫") {
           hasAvailableCopy = true;
           break;
         }
       }
     } else {
-      hasAvailableCopy = (bookValues[6] || "").toString().trim() === "在庫";
+      hasAvailableCopy = normalizeBookStatus_(bookValues[6]) === "在庫";
     }
     if (hasAvailableCopy) {
       return { success: false, message: `「${title}」は在庫があります。予約せずにそのまま貸出できます。` };
