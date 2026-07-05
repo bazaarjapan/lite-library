@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <title>棚卸し</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <?!= includeHtml_('common_styles'); ?>
+    <style>
+      /* ページ固有: 進捗カウンタと結果リスト */
+      .progress-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.5rem;
+        text-align: center;
+      }
+      .progress-item {
+        padding: 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg);
+      }
+      .progress-value { font-size: 1.5rem; font-weight: 700; }
+      .progress-label { font-size: 0.78rem; color: var(--text-muted); }
+      .audit-list { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; }
+      .audit-list li { margin-bottom: 0.25rem; }
+      #audit-section { display: none; }
+      .note { font-size: 0.82rem; color: var(--text-muted); }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <a href="#" class="app-header-back js-menu-link">← メニュー</a>
+      <span class="app-header-title"><span class="group-dot manage"></span>棚卸し</span>
+    </header>
+
+    <main class="app-main wide">
+      <div class="card" id="start-card">
+        <h2 class="card-title">蔵書点検</h2>
+        <p>蔵書の一覧を読み込み、棚の本をスキャンして突き合わせます。結果の確認だけを行い、データは変更しません。</p>
+        <p class="note">※ 進捗はこのページを開いている間だけ保持されます(再読込で消えます)。途中で中断する場合は先に「結果を表示」で控えを取ってください。</p>
+        <div class="button-group">
+          <button id="start-button" class="btn-primary btn-lg btn-block">蔵書を読み込んで開始</button>
+        </div>
+      </div>
+
+      <div id="audit-section">
+        <div class="two-col">
+          <div>
+            <div class="card">
+              <h2 class="card-title">進捗</h2>
+              <div class="progress-grid">
+                <div class="progress-item">
+                  <div class="progress-value" id="count-total">0</div>
+                  <div class="progress-label">棚にあるはず(貸出中を除く)</div>
+                </div>
+                <div class="progress-item">
+                  <div class="progress-value" id="count-scanned">0</div>
+                  <div class="progress-label">スキャン済</div>
+                </div>
+                <div class="progress-item">
+                  <div class="progress-value" id="count-remaining">0</div>
+                  <div class="progress-label">未スキャン</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2 class="card-title">スキャン</h2>
+              <div class="field">
+                <label for="scan-input">管理番号</label>
+                <div class="input-row">
+                  <input type="text" id="scan-input" placeholder="スキャンまたは手入力してEnter">
+                  <button id="scan-button">📷 スキャン</button>
+                  <button id="record-button">記録</button>
+                </div>
+              </div>
+              <div class="button-group">
+                <button id="result-button" class="btn-primary btn-lg btn-block">結果を表示(未スキャンの在庫本)</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="card">
+              <h2 class="card-title">⚠ 貸出中のはずが棚にある本 (<span id="count-lent-found">0</span>)</h2>
+              <ul class="audit-list" id="lent-found-list"></ul>
+            </div>
+            <div class="card">
+              <h2 class="card-title">⚠ 蔵書DBに無い管理番号 (<span id="count-unknown">0</span>)</h2>
+              <ul class="audit-list" id="unknown-list"></ul>
+            </div>
+            <div class="card" id="missing-card" style="display: none;">
+              <h2 class="card-title">🔍 在庫のはずがスキャンされなかった本 (<span id="count-missing">0</span>)</h2>
+              <ul class="audit-list" id="missing-list"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p id="message"></p>
+    </main>
+
+    <script>
+      let books = new Map();   // 管理番号 → {managementNumber, isbn, title, status}
+      let scanned = new Set(); // スキャン済みの管理番号
+      const unknownIds = new Set();
+
+      function setMessage(msg) {
+        document.getElementById('message').innerText = msg;
+      }
+
+      function updateCounters() {
+        // 進捗の母数は「棚にあるはずの本」(貸出中を除く)。貸出中の本は
+        // スキャンされたら警告リストに出るだけで進捗には数えない
+        // (数えると貸出が1冊でもある限り未スキャンが0にならない)。
+        // 未登録IDも対象外
+        let total = 0;
+        let scannedOnShelf = 0;
+        books.forEach(book => {
+          if (book.status === '貸出中') return;
+          total++;
+          if (scanned.has(book.managementNumber)) scannedOnShelf++;
+        });
+        document.getElementById('count-total').textContent = total;
+        document.getElementById('count-scanned').textContent = scannedOnShelf;
+        document.getElementById('count-remaining').textContent = total - scannedOnShelf;
+      }
+
+      function addListItem(listId, countId, text) {
+        const li = document.createElement('li');
+        li.textContent = text;
+        const list = document.getElementById(listId);
+        list.appendChild(li);
+        document.getElementById(countId).textContent = list.children.length;
+      }
+
+      function startAudit() {
+        const button = document.getElementById('start-button');
+        button.disabled = true;
+        setMessage('蔵書を読み込み中...');
+        google.script.run
+          .withSuccessHandler(response => {
+            button.disabled = false;
+            if (!response || !response.success) {
+              setMessage((response && response.message) || '蔵書の読み込みに失敗しました。');
+              return;
+            }
+            books = new Map();
+            response.books.forEach(book => books.set(book.managementNumber, book));
+            scanned = new Set();
+            document.getElementById('start-card').style.display = 'none';
+            document.getElementById('audit-section').style.display = 'block';
+            updateCounters();
+            setMessage(response.message + ' 棚の本をスキャンしてください。');
+            document.getElementById('scan-input').focus();
+          })
+          .withFailureHandler(error => {
+            button.disabled = false;
+            setMessage('読み込みエラー: ' + error.message);
+            console.error('棚卸し読み込みエラー:', error);
+          })
+          .getInventorySnapshot();
+      }
+
+      function recordScan(rawId) {
+        const id = (rawId || '').toString().trim();
+        if (!id) {
+          setMessage('管理番号を入力またはスキャンしてください。');
+          return;
+        }
+        document.getElementById('scan-input').value = '';
+
+        if (scanned.has(id)) {
+          setMessage(`[${id}] は既にスキャン済みです。`);
+          return;
+        }
+        scanned.add(id);
+
+        const book = books.get(id);
+        if (!book) {
+          if (!unknownIds.has(id)) {
+            unknownIds.add(id);
+            addListItem('unknown-list', 'count-unknown', id);
+          }
+          setMessage(`⚠ [${id}] は蔵書DBにありません(未登録または廃棄済み)。`);
+          return;
+        }
+        if (book.status === '貸出中') {
+          addListItem('lent-found-list', 'count-lent-found', `${book.managementNumber} ${book.title}`);
+          setMessage(`⚠ 「${book.title}」は貸出中のはずです。貸出記録を確認してください。`);
+        } else {
+          setMessage(`「${book.title}」を確認しました。`);
+        }
+        updateCounters();
+      }
+
+      function showResults() {
+        const list = document.getElementById('missing-list');
+        list.innerHTML = '';
+        let missingCount = 0;
+        books.forEach(book => {
+          if (book.status !== '貸出中' && !scanned.has(book.managementNumber)) {
+            addListItem('missing-list', 'count-missing', `${book.managementNumber} ${book.title}`);
+            missingCount++;
+          }
+        });
+        document.getElementById('count-missing').textContent = missingCount;
+        document.getElementById('missing-card').style.display = 'block';
+        setMessage(missingCount === 0
+          ? '在庫の本はすべて確認できました。'
+          : `${missingCount}冊が未確認です(行方不明の疑い)。棚を再確認してください。`);
+      }
+
+      window.onload = function() {
+        document.getElementById('start-button').addEventListener('click', startAudit);
+        document.getElementById('record-button').addEventListener('click', () => recordScan(document.getElementById('scan-input').value));
+        document.getElementById('scan-input').addEventListener('keypress', event => {
+          if (event.key === 'Enter') recordScan(document.getElementById('scan-input').value);
+        });
+        document.getElementById('scan-button').addEventListener('click', () => {
+          if (window.LiteLibraryBarcodeScanner) LiteLibraryBarcodeScanner.open('interactive-audit');
+        });
+        document.getElementById('result-button').addEventListener('click', showResults);
+      };
+    </script>
+    <?!= includeHtml_('barcode_scanner'); ?>
+    <script>
+      LiteLibraryBarcodeScanner.configure({
+        contexts: {
+          'interactive-audit': {
+            inputFieldId: 'scan-input',
+            label: '管理番号',
+            title: '管理番号をスキャン',
+            readers: ['code_128_reader', 'code_39_reader', 'code_93_reader', 'ean_reader', 'ean_8_reader']
+          }
+        },
+        onScan: function(result) {
+          recordScan(result.code);
+        }
+      });
+    </script>
+    <script>
+      // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
+      (function() {
+        const url = '<?!= getWebAppUrl(); ?>';
+        document.querySelectorAll('.js-menu-link').forEach(el => { el.href = url; });
+      })();
+    </script>
+  </body>
+</html>

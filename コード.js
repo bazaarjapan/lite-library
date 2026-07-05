@@ -66,6 +66,10 @@ function doGet(e) {
         page = 'reservations';
         title = '予約管理';
         break;
+      case 'audit':
+        page = 'inventory_audit';
+        title = '棚卸し';
+        break;
       case 'user_returns':
         page = 'user_returns';
         title = '利用者別返却システム';
@@ -609,6 +613,56 @@ function renewLending_(bookId, rowNumber, userId, lendingDate) {
   } catch (error) {
     console.error(`貸出延長中にエラーが発生しました: ${error}`);
     return { success: false, message: `貸出延長に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 棚卸し用の蔵書スナップショットを取得する関数(読み取り専用)。
+ * 廃棄(論理削除)を除く全蔵書を、貸出記録の未返却を加味した状態付きで返す。
+ * 照合はクライアント側で行い、サーバーへの書き込みは一切しない。
+ * @return {object} {success: boolean, message: string, books: Array<{managementNumber, isbn, title, status}>}
+ */
+function getInventorySnapshot() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const bookSheet = ss.getSheetByName("書籍DB");
+    if (!bookSheet) {
+      throw new Error("書籍DBシートが見つかりません。");
+    }
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
+    }
+
+    // 貸出記録の未返却を正とする(書籍DBのG列が更新漏れでも貸出中として扱う)
+    const activeLoanIds = new Set();
+    const lendingSheet = ss.getSheetByName("貸出記録");
+    if (lendingSheet) {
+      const lendingData = lendingSheet.getDataRange().getValues();
+      for (let i = 1; i < lendingData.length; i++) {
+        if (lendingData[i][6] === "未返却" && lendingData[i][0]) {
+          activeLoanIds.add(lendingData[i][0].toString().trim());
+        }
+      }
+    }
+
+    const data = bookSheet.getDataRange().getValues();
+    const books = [];
+    for (let i = 1; i < data.length; i++) {
+      const managementNumber = data[i][0] ? data[i][0].toString().trim() : "";
+      if (!managementNumber) continue;
+      const status = (data[i][6] || "在庫").toString().trim() || "在庫";
+      if (status === "廃棄") continue; // 論理削除済みは棚卸しの対象外
+      books.push({
+        managementNumber: managementNumber,
+        isbn: data[i][1] ? data[i][1].toString().trim() : "",
+        title: data[i][2] ? data[i][2].toString() : "",
+        status: activeLoanIds.has(managementNumber) ? "貸出中" : status
+      });
+    }
+    return { success: true, message: `${books.length}冊の蔵書を読み込みました。`, books: books };
+  } catch (error) {
+    console.error(`棚卸しスナップショットの取得中にエラーが発生しました: ${error}`);
+    return { success: false, message: `蔵書の読み込みに失敗しました: ${error.message}`, books: [] };
   }
 }
 
