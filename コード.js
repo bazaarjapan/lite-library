@@ -2633,11 +2633,12 @@ function backupReturnedData_(targetSpreadsheetId) {
         ? returnDateHeaderIndex + 1
         : Math.min(sourceHeaders.length, 7);
       const overlap = Math.min(targetHeaders.length, sourceHeaders.length);
-      // 片側にしか存在しない列は「最終通知日」のみ許容する
+      // 片側にしか存在しない列は通知系の管理列(最終通知日・リマインダー送信日)のみ許容する
       // (無関係な列を持つシートへの誤追記や、返却日時が別名列に紛れ込むのを防ぐ)
+      const allowedExtraColumns = ["最終通知日", "リマインダー送信日"];
       const extraColumnsAllowed =
-        targetHeaders.slice(overlap).every(h => h === "最終通知日") &&
-        sourceHeaders.slice(overlap).every(h => h === "最終通知日");
+        targetHeaders.slice(overlap).every(h => allowedExtraColumns.indexOf(h) !== -1) &&
+        sourceHeaders.slice(overlap).every(h => allowedExtraColumns.indexOf(h) !== -1);
       const isCompatible = targetHeaders.length >= requiredColumnCount &&
         targetHeaders.slice(0, overlap).join("\t") === sourceHeaders.slice(0, overlap).join("\t") &&
         extraColumnsAllowed;
@@ -3839,10 +3840,44 @@ function removeReminderTrigger() {
 /**
  * 運用に必要な時間主導トリガーを一括で設置する関数(冪等)。
  * 延滞通知(毎日9時)+返却リマインダー(毎日9時)+月次アーカイブ(毎月1日3時)。
+ * 月次アーカイブは backupSpreadsheetId が設定済みかつ疎通確認(実バックアップ1回)に
+ * 成功した場合のみ設置する(未設定のまま設置すると毎月黙ってスキップされるため)。
  * @return {object} 処理結果 {success: boolean, message: string}
  */
 function installAllTriggers() {
-  const results = [installOverdueTrigger(), installReminderTrigger(), installArchiveTrigger()];
+  const results = [installOverdueTrigger(), installReminderTrigger()];
+
+  let backupId = "";
+  try {
+    const settings = getLibrarySettings();
+    backupId = settings.backupSpreadsheetId ? settings.backupSpreadsheetId.toString().trim() : "";
+  } catch (e) {
+    console.warn("設定の取得に失敗したため月次アーカイブトリガーの設置を見送ります:", e);
+  }
+  if (!backupId) {
+    // 設定されていないのは新規環境では正常な状態なので、全体の成否には含めず
+    // 未設置であることと設定手順をメッセージで明示する
+    results.push({
+      success: true,
+      message: "月次アーカイブトリガーは未設置です(backupSpreadsheetId が未設定)。onOpen内でコメントアウトされている「月次アーカイブトリガー設置(毎月1日)」を有効化して実行すると、保存先の入力・検証込みで設置できます。"
+    });
+  } else {
+    // installArchiveTriggerFromMenu と同じく、本番と同じ経路で疎通確認してから設置する
+    const testRun = backupReturnedData(backupId);
+    if (!testRun.success) {
+      results.push({
+        success: false,
+        message: `月次アーカイブトリガーは未設置: バックアップ先の検証に失敗しました(${testRun.message})`
+      });
+    } else {
+      const archiveResult = installArchiveTrigger();
+      results.push({
+        success: archiveResult.success,
+        message: `${archiveResult.message}(疎通確認として初回バックアップを実行: ${testRun.message})`
+      });
+    }
+  }
+
   return {
     success: results.every(r => r.success),
     message: results.map(r => r.message).join("\n")
