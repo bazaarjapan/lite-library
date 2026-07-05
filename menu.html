@@ -57,6 +57,24 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    /* 本日の稼働状況ミニダッシュボード(読み込み成功時のみ表示) */
+    #dashboard {
+      display: none;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .stat-tile {
+      padding: 0.5rem 0.25rem;
+      text-align: center;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .stat-value { font-size: 1.375rem; font-weight: 700; line-height: 1.2; }
+    .stat-label { font-size: 0.72rem; color: var(--text-muted); }
+    .stat-tile.alert { border-color: var(--danger); background: var(--danger-soft); }
+    .stat-tile.alert .stat-value { color: var(--danger); }
   </style>
 </head>
 <body>
@@ -64,8 +82,28 @@
     <span class="app-header-title">📚 図書館管理システム</span>
   </header>
 
-  <main class="app-main wide" id="menuContainer">
-    <div class="loading">読み込み中...</div>
+  <main class="app-main wide">
+    <div id="dashboard">
+      <div class="stat-tile">
+        <div class="stat-value" id="stat-lent">-</div>
+        <div class="stat-label">今日の貸出</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-value" id="stat-returned">-</div>
+        <div class="stat-label">今日の返却</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-value" id="stat-active">-</div>
+        <div class="stat-label">貸出中</div>
+      </div>
+      <div class="stat-tile" id="stat-overdue-tile">
+        <div class="stat-value" id="stat-overdue">-</div>
+        <div class="stat-label">延滞</div>
+      </div>
+    </div>
+    <div id="menuContainer">
+      <div class="loading">読み込み中...</div>
+    </div>
   </main>
 
   <script>
@@ -137,6 +175,25 @@
     });
 
     document.getElementById('menuContainer').innerHTML = menuHtml;
+
+    // 本日の稼働状況を非同期で読み込む(メニュー描画はブロックしない。
+    // 取得失敗時はダッシュボードを表示しないだけで、メニューは通常どおり使える)
+    google.script.run
+      .withSuccessHandler(function(summary) {
+        if (!summary || !summary.success) return;
+        document.getElementById('stat-lent').textContent = summary.todayLent;
+        document.getElementById('stat-returned').textContent = summary.todayReturned;
+        document.getElementById('stat-active').textContent = summary.activeLoans;
+        document.getElementById('stat-overdue').textContent = summary.overdue;
+        if (summary.overdue > 0) {
+          document.getElementById('stat-overdue-tile').classList.add('alert');
+        }
+        document.getElementById('dashboard').style.display = 'grid';
+      })
+      .withFailureHandler(function(error) {
+        console.error('ダッシュボードの読み込みに失敗しました:', error);
+      })
+      .getDashboardSummary();
   </script>
 </body>
 </html>
