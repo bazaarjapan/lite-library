@@ -27,6 +27,7 @@
                 <th>予約日時</th>
                 <th>書籍名</th>
                 <th>利用者</th>
+                <th>状態</th>
                 <th>予約キー</th>
                 <th>取消</th>
               </tr>
@@ -86,6 +87,13 @@
           const userCell = document.createElement('td');
           userCell.textContent = (item.userName || '') + ' (' + (item.userId || '') + ')';
           row.appendChild(userCell);
+
+          const statusCell = document.createElement('td');
+          const statusBadge = document.createElement('span');
+          statusBadge.className = 'badge ' + (item.status === '取り置き中' ? 'badge-ok' : 'badge-warn');
+          statusBadge.textContent = item.status || '予約中';
+          statusCell.appendChild(statusBadge);
+          row.appendChild(statusCell);
 
           const keyCell = document.createElement('td');
           keyCell.className = 'mono';

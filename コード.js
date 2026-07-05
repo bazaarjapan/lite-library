@@ -28,7 +28,7 @@ const SCHEMA = {
   "予約DB": {
     // 書籍ID: 本にISBNがあれば正規化ISBN、なければ管理番号(複本のどのコピーが
     // 返却されても予約に反応させるため)。照合は常に「管理番号 or そのISBN」の両方で行う
-    // 状態: 予約中 / 貸出済 / 取消
+    // 状態: 予約中(待ち) / 取り置き中(返却済みコピーを割当・案内済み) / 貸出済 / 取消
     headers: ["予約ID", "書籍ID", "書籍名", "利用者ID", "利用者名", "予約日時", "状態", "処理日時"],
     col: { 予約ID: 0, 書籍ID: 1, 書籍名: 2, 利用者ID: 3, 利用者名: 4, 予約日時: 5, 状態: 6, 処理日時: 7 }
   }
@@ -633,9 +633,9 @@ function ensureReservationSheet_() {
 }
 
 /**
- * 予約中の予約を行順(=予約順)に読み込む補助関数。
+ * 有効な予約(予約中・取り置き中)を行順(=予約順)に読み込む補助関数。
  * 予約DBシートが存在しない環境では actives が空になる(機能未使用としてスキップできる)。
- * @return {object} {sheet: Sheet|null, actives: Array<{rowNumber, reservationId, bookKey, bookTitle, userId, userName, reservedAt}>}
+ * @return {object} {sheet: Sheet|null, actives: Array<{rowNumber, reservationId, bookKey, bookTitle, userId, userName, reservedAt, status}>}
  */
 function loadActiveReservations_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("予約DB");
@@ -646,7 +646,8 @@ function loadActiveReservations_() {
   const data = sheet.getDataRange().getValues();
   const actives = [];
   for (let i = 1; i < data.length; i++) {
-    if (data[i][col.状態] === "予約中" && data[i][col.書籍ID]) {
+    const status = data[i][col.状態];
+    if ((status === "予約中" || status === "取り置き中") && data[i][col.書籍ID]) {
       actives.push({
         rowNumber: i + 1,
         reservationId: data[i][col.予約ID] ? data[i][col.予約ID].toString().trim() : "",
@@ -654,11 +655,36 @@ function loadActiveReservations_() {
         bookTitle: data[i][col.書籍名] ? data[i][col.書籍名].toString() : "",
         userId: data[i][col.利用者ID] ? data[i][col.利用者ID].toString().trim() : "",
         userName: data[i][col.利用者名] ? data[i][col.利用者名].toString() : "",
-        reservedAt: data[i][col.予約日時]
+        reservedAt: data[i][col.予約日時],
+        status: status
       });
     }
   }
   return { sheet: sheet, actives: actives };
+}
+
+/**
+ * 利用者の有効な予約(予約中・取り置き中)をすべて取消する補助関数。
+ * 利用者の論理削除時に呼び、削除済み利用者の予約が貸出・延長・返却案内を
+ * ブロックし続けないようにする。失敗しても呼び出し元の処理は失敗にしない。
+ * @param {string} userId - 利用者ID
+ */
+function cancelActiveReservationsForUser_(userId) {
+  try {
+    const { sheet, actives } = loadActiveReservations_();
+    if (!sheet || actives.length === 0) return;
+    const normalized = userId.toString().trim().toLowerCase();
+    const col = SCHEMA["予約DB"].col;
+    actives.forEach(reservation => {
+      if (reservation.userId.toLowerCase() === normalized) {
+        sheet.getRange(reservation.rowNumber, col.状態 + 1).setValue("取消");
+        sheet.getRange(reservation.rowNumber, col.処理日時 + 1).setValue(new Date());
+        console.log(`利用者削除に伴い予約を取消しました: ${reservation.reservationId} 「${reservation.bookTitle}」`);
+      }
+    });
+  } catch (error) {
+    console.error(`利用者の予約取消中にエラーが発生しました: ${error}`);
+  }
 }
 
 /**
@@ -845,7 +871,7 @@ function cancelReservation_(reservationId) {
     }
     const col = SCHEMA["予約DB"].col;
     const rowValues = sheet.getRange(rowNum, 1, 1, SCHEMA["予約DB"].headers.length).getValues()[0];
-    if (rowValues[col.状態] !== "予約中") {
+    if (rowValues[col.状態] !== "予約中" && rowValues[col.状態] !== "取り置き中") {
       return { success: false, message: `この予約は既に処理済みです(状態: ${rowValues[col.状態]})。` };
     }
     sheet.getRange(rowNum, col.状態 + 1).setValue("取消");
@@ -875,7 +901,8 @@ function getActiveReservations() {
         bookTitle: r.bookTitle,
         userId: r.userId,
         userName: r.userName,
-        reservedAt: (r.reservedAt instanceof Date && !isNaN(r.reservedAt)) ? r.reservedAt.toISOString() : ""
+        reservedAt: (r.reservedAt instanceof Date && !isNaN(r.reservedAt)) ? r.reservedAt.toISOString() : "",
+        status: r.status
       }))
     };
   } catch (error) {
@@ -894,15 +921,18 @@ function getActiveReservations() {
 function buildReservationNoticesForReturns_(returnedBookIds) {
   try {
     if (!returnedBookIds || returnedBookIds.length === 0) return [];
-    const { actives } = loadActiveReservations_();
-    if (actives.length === 0) return [];
+    const { sheet, actives } = loadActiveReservations_();
+    if (!sheet || actives.length === 0) return [];
+    const resCol = SCHEMA["予約DB"].col;
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const bookSheet = ss.getSheetByName("書籍DB");
     const notices = [];
-    // 消費式のプール: 案内した予約は除外し、同一タイトルの複本を同時返却した場合に
-    // 2冊目以降が予約キューの次の予約者に割り当たるようにする
-    let reservationPool = actives;
+    // 消費式のプール: 「予約中」だけを対象にし(取り置き中は既にコピーが割当済み)、
+    // 案内した予約はシート上も「取り置き中」へ更新してプールから除外する。
+    // これにより同一タイトルの複本が同時でも別々の返却操作でも、
+    // 2冊目はキューの次の予約者に割り当たる
+    let reservationPool = actives.filter(r => r.status === "予約中");
     let settings = null;
     let emailByUserId = null; // 必要になったときだけ利用者DBを読む
 
@@ -920,6 +950,8 @@ function buildReservationNoticesForReturns_(returnedBookIds) {
       const reservation = findReservationForBook_(reservationPool, trimmedId, isbn);
       if (!reservation) return;
       reservationPool = reservationPool.filter(r => r !== reservation);
+      // 返却をまたいで消費を永続化する(次の返却では次の予約者が案内される)
+      sheet.getRange(reservation.rowNumber, resCol.状態 + 1).setValue("取り置き中");
       notices.push(`⚠ 「${reservation.bookTitle}」は ${reservation.userName} さん(ID: ${reservation.userId})が予約中です。取り置きしてください。`);
 
       // 予約者への入荷メール(ベストエフォート)
@@ -2602,6 +2634,8 @@ function deleteUser_(userId) {
         // 過去の貸出記録との参照を守り、同じ利用者IDの再発行も防ぐ
         ensureUserStatusColumn_();
         userSheet.getRange(i + 1, SCHEMA["利用者DB"].col.状態 + 1).setValue("削除済み");
+        // 削除済み利用者の予約が貸出・延長・返却案内をブロックし続けないよう取消する
+        cancelActiveReservationsForUser_(userId);
         console.log(`利用者を論理削除しました: ${userId}`);
         return true;
       }
