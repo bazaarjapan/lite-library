@@ -1998,33 +1998,42 @@ function processBulkLending_(bulkData) {
       // 成立した予約はプールから消費し、複本の同時貸出でも他の予約を追い越せないようにする
       const matchingReservations = findReservationsForBook_(reservationState.actives, lendId, book.isbn || "");
       if (matchingReservations.length > 0) {
+        const pendingQueue = matchingReservations.filter(r => r.status === "予約中");
+        const heldCount = matchingReservations.length - pendingQueue.length;
+        // 現時点で貸出可能なコピー数(このリクエストで確定済みの分は除外済み)
+        const copies = (book.isbn && copiesByIsbn.has(book.isbn))
+          ? copiesByIsbn.get(book.isbn)
+          : [{ managementNumber: lendId, entry: book }];
+        const availableCopies = copies.filter(copy =>
+          copy.entry.status === "在庫" && !activeLoanIds.has(copy.managementNumber)
+        ).length;
+
         let consumable = matchingReservations.find(r =>
           r.status === "取り置き中" && r.userId.toLowerCase() === normalizedUserId
         ) || null;
+        let allowWithoutReservation = false;
         if (!consumable) {
-          const pendingQueue = matchingReservations.filter(r => r.status === "予約中");
-          const heldCount = matchingReservations.length - pendingQueue.length;
           if (pendingQueue.length > 0 && pendingQueue[0].userId.toLowerCase() === normalizedUserId) {
-            // 現時点で貸出可能なコピー数(このリクエストで確定済みの分は除外済み)
-            const copies = (book.isbn && copiesByIsbn.has(book.isbn))
-              ? copiesByIsbn.get(book.isbn)
-              : [{ managementNumber: lendId, entry: book }];
-            const availableCopies = copies.filter(copy =>
-              copy.entry.status === "在庫" && !activeLoanIds.has(copy.managementNumber)
-            ).length;
+            // 予約中キューの先頭本人は、取り置き分を除いた余剰コピーがあれば貸出可
             if (availableCopies > heldCount) {
               consumable = pendingQueue[0];
             }
+          } else if (pendingQueue.length === 0 && availableCopies > heldCount) {
+            // 順番待ち(予約中)がなく、取り置き分を除いた余剰コピーがある場合は
+            // 予約のない利用者にも貸し出せる(取り置き済みのコピー数は温存される)
+            allowWithoutReservation = true;
           }
         }
-        if (!consumable) {
+        if (!consumable && !allowWithoutReservation) {
           errorCount++;
           errorMessages.push(`${lendId}（予約あり: ${matchingReservations[0].userName} さんが予約中）`);
           console.warn(`貸出スキップ: 書籍ID ${lendId} は他の利用者の予約(先頭: ${matchingReservations[0].userId})が優先されます。`);
           return;
         }
-        reservationsToFulfill.push(consumable);
-        reservationState.actives = reservationState.actives.filter(r => r !== consumable);
+        if (consumable) {
+          reservationsToFulfill.push(consumable);
+          reservationState.actives = reservationState.actives.filter(r => r !== consumable);
+        }
       }
 
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
