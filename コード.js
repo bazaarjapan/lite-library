@@ -384,7 +384,7 @@ function getAvailableBook(isbn) {
     }
     
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     // ISBN(B列)を正規化して一致する行だけを取得し、その中から在庫のある本を探す
@@ -435,7 +435,7 @@ function getBookDetails(bookId) {
     }
 
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     // A:管理番号, B:ISBN, C:書籍名, D:著者名, E:出版社, F:備考, G:状態
@@ -1101,7 +1101,7 @@ function processBulkLending_(bulkData) {
     }
 
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     // 書籍DBの情報を先に読み込んでおく（効率化のため）
@@ -1578,7 +1578,7 @@ function registerBook_(bookData) {
       // 書籍IDが正しく認識されなくなるため、先に移行を促す
       return {
         success: false,
-        message: "書籍DBが旧レイアウトのままです。スプレッドシートの管理メニューから「書籍DBを新レイアウトへ移行」を実行してから登録してください。"
+        message: "書籍DBが旧レイアウトのままです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してから登録してください。"
       };
     }
     
@@ -1653,7 +1653,7 @@ function updateBookStatus(bookId, status) {
     }
     
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     // TextFinderで管理番号(A列)の行を特定し、G列(状態)のみ更新する
@@ -2030,20 +2030,23 @@ function getAllUserIds_() {
  * スプレッドシートが開かれたときにカスタムメニューを追加する関数
  */
 function onOpen() {
+  // 日常運用で使う項目のみ表示する。運用開始時・環境再構築時のみ必要な
+  // 一回きり系は下のコメントアウトを外して使う(関数自体は残している)。
+  // コメントを外してもチェーンが壊れないよう、コメント行は必ず有効な
+  // .addItem より前(セミコロンより前)に置くこと
   const menu = SpreadsheetApp.getUi()
       .createMenu('管理メニュー')
-      .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
-      .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
+      // .addItem('初期セットアップ', 'setupLibrarySystemFromMenu')
+      // .addItem('書籍DBを新レイアウトへ移行', 'migrateBookDbLayoutFromMenu')
+      // .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
+      // .addItem('延滞通知トリガー解除', 'removeOverdueTriggerFromMenu')
+      // .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
+      // .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu')
       .addItem('スキーマ検証', 'validateSchemaFromMenu')
       .addItem('状態の整合性チェック・修復', 'checkBookStatusConsistencyFromMenu')
-      .addItem('バーコード生成', 'generateBarcodesForSheet')
       .addItem('延滞リマインダー送信', 'sendOverdueRemindersFromMenu')
-      .addItem('延滞通知トリガー設置(毎日9時)', 'installOverdueTriggerFromMenu')
-      .addItem('延滞通知トリガー解除', 'removeOverdueTriggerFromMenu')
       .addItem('貸出状況レポート作成', 'generateLendingReport')
-      .addItem('返却済データのバックアップ', 'showBackupDialog')
-      .addItem('月次アーカイブトリガー設置(毎月1日)', 'installArchiveTriggerFromMenu')
-      .addItem('月次アーカイブトリガー解除', 'removeArchiveTriggerFromMenu');
+      .addItem('返却済データのバックアップ', 'showBackupDialog');
 
   // 破壊的な開発用メニューは、設定DBの operationMode が development の
   // ときだけ表示する(本番データの誤リセット防止。設定読み取りに失敗しても
@@ -2208,7 +2211,7 @@ function validateSchema_() {
       success: false,
       message: "スキーマのずれを検出しました。列の並びが定義と異なるとデータが誤読されます:\n\n" +
         problems.join("\n") +
-        "\n\n書籍DBが旧レイアウトの場合は「書籍DBを新レイアウトへ移行」を実行してください。",
+        "\n\n書籍DBが旧レイアウトの場合はonOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。",
       problems: problems
     };
   } catch (error) {
@@ -2263,7 +2266,7 @@ function analyzeBookStatusConsistency_() {
       return { success: false, message: "書籍DBまたは貸出記録シートが見つかりません。", mismatches: [], orphans: [], doubleLent: [] };
     }
     if (!isNewBookLayout_(bookSheet)) {
-      return { success: false, message: "書籍DBが旧レイアウトです。先に「書籍DBを新レイアウトへ移行」を実行してください。", mismatches: [], orphans: [], doubleLent: [] };
+      return { success: false, message: "書籍DBが旧レイアウトです。先にonOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。", mismatches: [], orphans: [], doubleLent: [] };
     }
 
     // 貸出記録から未返却の書籍IDごとの件数を集計
@@ -2777,48 +2780,6 @@ function generateLendingReport() {
 }
 
 /**
- * 「バーコード生成」シートのIDに基づいてバーコード画像を生成する関数
- */
-function generateBarcodesForSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetName = "バーコード生成"; // 対象シート名
-  const sheet = ss.getSheetByName(sheetName);
-  const idColumn = 1; // ID列 (A列 = 1)
-  const barcodeColumn = 3; // バーコード画像列 (C列 = 3)
-
-  if (!sheet) {
-    SpreadsheetApp.getUi().alert(`シート「${sheetName}」が見つかりません。`);
-    return;
-  }
-
-  const dataRange = sheet.getDataRange();
-  const values = dataRange.getValues(); // シート全体のデータを取得
-
-  // ヘッダー行を除き、指定列にデータがある行を処理
-  const formulas = [];
-  for (let i = 1; i < values.length; i++) { // i = 0 はヘッダーなのでスキップ
-    const id = values[i][idColumn - 1]; // 指定されたID列の値を取得 (0-based index)
-    if (id) { // IDが空でない場合のみ処理
-      // barcode.tec-it.com APIを使用してCode 128バーコードURLを生成 (DPIを300に戻す)
-      const barcodeUrl = `https://barcode.tec-it.com/barcode.ashx?data=${encodeURIComponent(id)}&code=Code128&dpi=300&borderwidth=10&bordercolor=FFFFFF`;
-      // IMAGE関数を作成 (モード2: セルに合わせて伸縮表示)
-      formulas.push([`=IMAGE("${barcodeUrl}", 2)`]);
-    } else {
-      formulas.push(['']); // IDがない場合は空文字を設定
-    }
-  }
-
-  // 指定列のデータ範囲に数式を設定 (ヘッダー行を除く)
-  if (formulas.length > 0) {
-    // 書き込み範囲を計算
-    sheet.getRange(2, barcodeColumn, formulas.length, 1).setFormulas(formulas);
-    SpreadsheetApp.getUi().alert(`「${sheetName}」シートのバーコード生成が完了しました。`);
-  } else {
-    SpreadsheetApp.getUi().alert('処理対象のIDがありませんでした。');
-  }
-}
-
-/**
  * ラベル印刷用の対象一覧を取得する関数
  * @param {string} type - "books"(書籍・廃棄を除く) または "users"(利用者・削除済みを除く)
  * @return {Array<{id: string, label: string}>} ラベル対象の配列
@@ -2846,7 +2807,7 @@ function getLabelItems(type) {
     const bookSheet = ss.getSheetByName("書籍DB");
     if (!bookSheet) return [];
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
     if (bookSheet.getLastRow() < 2) return [];
     const col = SCHEMA["書籍DB"].col;
@@ -4371,7 +4332,7 @@ function getBookInventory() {
     
     // ヘッダー行をチェックして新旧構造を判定
     if (!(bookData.length > 0 && bookData[0][0] === "管理番号")) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
 
@@ -4462,7 +4423,7 @@ function getBookFullDetails(bookId) {
     }
     
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     const bookData = bookSheet.getDataRange().getValues();
@@ -4597,7 +4558,7 @@ function updateBookInfo_(bookData) {
     }
     
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     const data = bookSheet.getDataRange().getValues();
@@ -4670,7 +4631,7 @@ function deleteBook_(bookId) {
     }
     
     if (!isNewBookLayout_(bookSheet)) {
-      throw new Error("書籍DBが旧レイアウトです。先に管理メニューの「書籍DBを新レイアウトへ移行」を実行してください。");
+      throw new Error("書籍DBが旧レイアウトです。先にonOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
     }
 
     const data = bookSheet.getDataRange().getValues();
