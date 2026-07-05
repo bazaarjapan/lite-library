@@ -346,17 +346,18 @@
   .badge-danger { background: var(--danger-soft); color: var(--danger); }
   .badge-muted { background: var(--bg); color: var(--text-muted); }
 
-  /* ---- 操作結果メッセージ(画面上部固定・空なら非表示) ----
+  /* ---- 操作結果メッセージ(ヘッダー直下・空なら非表示) ----
+     要素は末尾のスクリプトでヘッダー直下の通常フローに移動される。
+     オーバーレイではなくレイアウト内に置くことで、メッセージが何行に
+     折り返してもヘッダーや先頭の入力欄を覆わず、コンテンツを押し下げる。
+     スクロール時は sticky でヘッダーの下に貼り付く。
      デフォルトは情報(青系)。ページ側JSが .success / .error を付けると配色が変わる。 */
   #message, #status-message { display: none; }
   #message:not(:empty),
   #status-message:not(.hidden):not(:empty) {
     display: block;
-    position: fixed;
-    /* ヘッダーの下に表示する(ヘッダーを覆うと「← メニュー」が押せなくなる) */
+    position: sticky;
     top: var(--header-h);
-    left: 0;
-    right: 0;
     /* スキャナーオーバーレイ(1000〜1002)や確認モーダル(1000)より下に置く */
     z-index: 900;
     margin: 0;
@@ -378,13 +379,6 @@
     background: var(--danger-soft);
     color: var(--danger);
     border-bottom-color: #d9a49f;
-  }
-  /* メッセージ表示中はコンテンツ上部に余白を確保し、固定バーが先頭の
-     入力欄・ボタンを覆わないようにする(:has非対応の古いブラウザでは
-     従来どおり重なるだけで操作自体は下部のスクロールで可能) */
-  body:has(#message:not(:empty)) .app-main,
-  body:has(#status-message:not(.hidden):not(:empty)) .app-main {
-    padding-top: 4.5rem;
   }
 
   /* ---- ページ内スキャナーオーバーレイ(旧Quaggaフォールバック・全ページ共通) ---- */
@@ -465,3 +459,19 @@
     }
   }
 </style>
+<script>
+  // 操作結果メッセージ(#message / #status-message)をヘッダー直下の通常フローへ移動する。
+  // 各ページではDOM上は末尾付近に置かれているが、表示位置は常にヘッダー直下とし、
+  // オーバーレイでなくレイアウト内に置くことで、何行に折り返しても
+  // ヘッダーや先頭の入力欄を覆わないようにする(getElementByIdによる参照は移動後も有効)
+  document.addEventListener('DOMContentLoaded', function() {
+    var header = document.querySelector('.app-header');
+    if (!header) return;
+    ['status-message', 'message'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) {
+        header.insertAdjacentElement('afterend', el);
+      }
+    });
+  });
+</script>
