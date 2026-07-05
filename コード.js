@@ -2839,7 +2839,8 @@ function getUserDetails(userId) {
 
       // 日付を文字列に変換して返す
       const registrationDate = row[5] || null;
-      const lastUseDate = getLastUseDate(userId);
+      // 貸出記録の照合には正規のID(シート上の値)を使う(数字だけの入力でヒットした場合の補正)
+      const lastUseDate = getLastUseDate(rowUserId);
 
       const userDetails = {
         userId: rowUserId,
@@ -2904,20 +2905,34 @@ function getLastUseDate(userId) {
  */
 function getUserLendingHistory(userId) {
   if (!userId) return [];
-  
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const lendingSheet = ss.getSheetByName("貸出記録");
     if (!lendingSheet) return [];
-    
+
+    // 利用者DBで正規のIDに解決してから貸出記録を照合する
+    // (数字だけの入力でも R00001 のようなプレフィックス付きIDにヒットさせるため)
+    let canonicalUserId = userId.toString().trim();
+    const userSheetForResolve = ss.getSheetByName("利用者DB");
+    if (userSheetForResolve) {
+      const userRowNumber = findUserRowByFlexibleId_(userSheetForResolve, canonicalUserId);
+      if (userRowNumber !== -1) {
+        const idValue = userSheetForResolve.getRange(userRowNumber, 1).getValue();
+        if (idValue) {
+          canonicalUserId = idValue.toString().trim();
+        }
+      }
+    }
+
     const data = lendingSheet.getDataRange().getValues();
     const userIdColIndex = 2; // C列
     const history = [];
-    
+
     // ヘッダー行を除いて検索
     for (let i = 1; i < data.length; i++) {
       const rowUserId = data[i][userIdColIndex] ? data[i][userIdColIndex].toString().trim() : "";
-      if (rowUserId.toLowerCase() === userId.trim().toLowerCase()) {
+      if (rowUserId.toLowerCase() === canonicalUserId.toLowerCase()) {
         history.push({
           bookId: data[i][0] || "",
           bookTitle: data[i][1] || "",

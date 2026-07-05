@@ -244,7 +244,8 @@
           if (data) {
             currentUserData = data;
             displayUserInfo(data);
-            loadUserHistory(userId);
+            // 履歴は正規のID(サーバーが解決した値)で読み込む
+            loadUserHistory(data.userId || userId);
             showMessage('', '');
           } else {
             console.log('利用者が見つかりませんでした。入力されたID:', userId);
