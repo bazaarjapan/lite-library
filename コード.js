@@ -1549,6 +1549,19 @@ function processBulkReturnByRowNumbers_(records) {
       const { rowNumber, bookId } = record;
 
       try {
+        // 実際に「未返却→返却済」の遷移が起きる行だけを返却として扱う。
+        // 古い画面からの二重送信や行ずれで別の行を返却済にしたり、
+        // 予約の取り置き昇格を余分に消費したりしないための検証
+        const rowValues = lendingSheet.getRange(rowNumber, 1, 1, 7).getValues()[0];
+        const rowBookId = rowValues[0] ? rowValues[0].toString().trim() : "";
+        const expectedBookId = bookId ? bookId.toString().trim() : "";
+        if (rowBookId !== expectedBookId || rowValues[6] !== "未返却") {
+          errorCount++;
+          errorMessages.push(`書籍ID ${expectedBookId}(行 ${rowNumber}): 貸出記録が更新されています。再検索してから返却してください。`);
+          console.warn(`返却スキップ: 行 ${rowNumber} は書籍ID不一致または未返却ではありません(期待: ${expectedBookId} / 実際: ${rowBookId} / 状況: ${rowValues[6]})。`);
+          return;
+        }
+
         // 行番号を使用して直接セルを更新
         lendingSheet.getRange(rowNumber, statusColIndex).setValue("返却済");
         lendingSheet.getRange(rowNumber, returnDateColIndex).setValue(currentDate);
@@ -3076,6 +3089,9 @@ function validateSchema_() {
     for (const [sheetName, def] of Object.entries(SCHEMA)) {
       const sheet = ss.getSheetByName(sheetName);
       if (!sheet) {
+        // 予約DBはオンデマンド作成(ensureReservationSheet_)のため、
+        // 未作成は正常な状態としてスキップする(作成済みならヘッダーは検証する)
+        if (sheetName === "予約DB") continue;
         problems.push(`シート「${sheetName}」が存在しません(初期セットアップ未実行の可能性)`);
         continue;
       }
