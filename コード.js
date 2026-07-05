@@ -24,6 +24,13 @@ const SCHEMA = {
   "設定DB": {
     headers: ["設定項目", "設定値", "説明", "更新日時"],
     col: { 設定項目: 0, 設定値: 1, 説明: 2, 更新日時: 3 }
+  },
+  "予約DB": {
+    // 書籍ID: 本にISBNがあれば正規化ISBN、なければ管理番号(複本のどのコピーが
+    // 返却されても予約に反応させるため)。照合は常に「管理番号 or そのISBN」の両方で行う
+    // 状態: 予約中 / 貸出済 / 取消
+    headers: ["予約ID", "書籍ID", "書籍名", "利用者ID", "利用者名", "予約日時", "状態", "処理日時"],
+    col: { 予約ID: 0, 書籍ID: 1, 書籍名: 2, 利用者ID: 3, 利用者名: 4, 予約日時: 5, 状態: 6, 処理日時: 7 }
   }
 };
 
@@ -54,6 +61,10 @@ function doGet(e) {
       case 'search':
         page = 'book_search';
         title = '蔵書検索';
+        break;
+      case 'reservations':
+        page = 'reservations';
+        title = '予約管理';
         break;
       case 'user_returns':
         page = 'user_returns';
@@ -535,6 +546,24 @@ function renewLending_(bookId, rowNumber, userId, lendingDate) {
     }
 
     const row = data[targetIndex];
+
+    // 予約が入っている本は延長不可(次の予約者を待たせないため)
+    const reservationActives = loadActiveReservations_().actives;
+    if (reservationActives.length > 0) {
+      let bookIsbn = "";
+      const bookSheet = ss.getSheetByName("書籍DB");
+      if (bookSheet) {
+        const bookRowNum = findRowByValue_(bookSheet, 1, id);
+        if (bookRowNum !== -1) {
+          const isbnValue = bookSheet.getRange(bookRowNum, 2).getValue();
+          bookIsbn = isbnValue ? isbnValue.toString() : "";
+        }
+      }
+      if (findReservationForBook_(reservationActives, id, bookIsbn)) {
+        return { success: false, message: `「${row[1] || id}」は予約が入っているため延長できません。` };
+      }
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const dueDateValue = row[5];
@@ -580,6 +609,349 @@ function renewLending_(bookId, rowNumber, userId, lendingDate) {
   } catch (error) {
     console.error(`貸出延長中にエラーが発生しました: ${error}`);
     return { success: false, message: `貸出延長に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 予約DBシートを取得する(存在しない・空の場合はヘッダーを投入して作成する。冪等)。
+ * @return {Sheet} 予約DBシート
+ */
+function ensureReservationSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("予約DB");
+  if (!sheet) {
+    sheet = ss.insertSheet("予約DB");
+  }
+  if (sheet.getLastRow() === 0) {
+    const headers = SCHEMA["予約DB"].headers;
+    const headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setValues([headers]);
+    headerRange.setFontWeight("bold").setBackground("#f3f3f3");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * 予約中の予約を行順(=予約順)に読み込む補助関数。
+ * 予約DBシートが存在しない環境では actives が空になる(機能未使用としてスキップできる)。
+ * @return {object} {sheet: Sheet|null, actives: Array<{rowNumber, reservationId, bookKey, bookTitle, userId, userName, reservedAt}>}
+ */
+function loadActiveReservations_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("予約DB");
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { sheet: sheet, actives: [] };
+  }
+  const col = SCHEMA["予約DB"].col;
+  const data = sheet.getDataRange().getValues();
+  const actives = [];
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][col.状態] === "予約中" && data[i][col.書籍ID]) {
+      actives.push({
+        rowNumber: i + 1,
+        reservationId: data[i][col.予約ID] ? data[i][col.予約ID].toString().trim() : "",
+        bookKey: data[i][col.書籍ID].toString().trim(),
+        bookTitle: data[i][col.書籍名] ? data[i][col.書籍名].toString() : "",
+        userId: data[i][col.利用者ID] ? data[i][col.利用者ID].toString().trim() : "",
+        userName: data[i][col.利用者名] ? data[i][col.利用者名].toString() : "",
+        reservedAt: data[i][col.予約日時]
+      });
+    }
+  }
+  return { sheet: sheet, actives: actives };
+}
+
+/**
+ * 本(管理番号+ISBN)に一致する最先頭(最古)の予約中の予約を返す補助関数。
+ * 予約キー規約: 予約DB.書籍ID は正規化ISBN(なければ管理番号)なので、両方で照合する。
+ * @param {Array} actives - loadActiveReservations_ の actives
+ * @param {string} managementNumber - 管理番号
+ * @param {string} isbn - ISBN(未正規化でもよい・空可)
+ * @return {object|null} 一致する予約、なければ null
+ */
+function findReservationForBook_(actives, managementNumber, isbn) {
+  if (!actives || actives.length === 0) return null;
+  const keys = [];
+  if (managementNumber) {
+    keys.push(managementNumber.toString().trim());
+  }
+  const normalized = isbn ? normalizeIsbn_(isbn) : "";
+  if (normalized) {
+    keys.push(normalized);
+  }
+  if (keys.length === 0) return null;
+  for (const reservation of actives) { // 行順=予約順(最古優先)
+    if (keys.indexOf(reservation.bookKey) !== -1) {
+      return reservation;
+    }
+  }
+  return null;
+}
+
+/**
+ * 予約を登録する関数(公開ラッパー)
+ * @param {string} bookId - 書籍ID(管理番号またはISBN)
+ * @param {string} userId - 予約する利用者ID
+ * @return {object} 処理結果 {success: boolean, message: string, reservationId?: string}
+ */
+function createReservation(bookId, userId) {
+  return runWithScriptLock_(
+    () => createReservation_(bookId, userId),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+/**
+ * 予約登録の実装。
+ * - 利用者が有効(削除済みでない)・本が存在(廃棄でない)ことを検証する
+ * - 同一ISBNのコピーに在庫があれば予約せず貸出を案内する
+ * - 同一キー×同一利用者の予約中重複を拒否する
+ */
+function createReservation_(bookId, userId) {
+  try {
+    const id = bookId ? bookId.toString().trim() : "";
+    const uid = userId ? userId.toString().trim() : "";
+    if (!id || !uid) {
+      return { success: false, message: "書籍IDと利用者IDを指定してください。" };
+    }
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 利用者の検証(削除済みは不可)
+    const userSheet = ss.getSheetByName("利用者DB");
+    if (!userSheet) {
+      throw new Error("利用者DBシートが見つかりません。");
+    }
+    const userRowNum = findRowByValue_(userSheet, 1, uid);
+    if (userRowNum === -1) {
+      return { success: false, message: `利用者ID ${uid} が見つかりません。` };
+    }
+    const userValues = userSheet.getRange(userRowNum, 1, 1, 7).getValues()[0];
+    if ((userValues[6] || "").toString().trim() === "削除済み") {
+      return { success: false, message: `利用者ID ${uid} が見つかりません。` };
+    }
+    const userName = userValues[1] ? userValues[1].toString() : "";
+
+    // 本の特定(管理番号→ISBNの順)と検証
+    const bookSheet = ss.getSheetByName("書籍DB");
+    if (!bookSheet) {
+      throw new Error("書籍DBシートが見つかりません。");
+    }
+    if (!isNewBookLayout_(bookSheet)) {
+      throw new Error("書籍DBが旧レイアウトです。onOpen内でコメントアウトされている管理メニュー「書籍DBを新レイアウトへ移行」を有効化して実行してください。");
+    }
+    let bookRowNum = findRowByValue_(bookSheet, 1, id);
+    const normalizedInputIsbn = isValidIsbn_(id) ? normalizeIsbn_(id) : "";
+    if (bookRowNum === -1 && normalizedInputIsbn) {
+      const isbnRows = findRowsByNormalizedIsbn_(bookSheet, 2, normalizedInputIsbn);
+      bookRowNum = isbnRows.length > 0 ? isbnRows[0] : -1;
+    }
+    if (bookRowNum === -1) {
+      return { success: false, message: `書籍 ${id} が見つかりません。` };
+    }
+    const bookValues = bookSheet.getRange(bookRowNum, 1, 1, 7).getValues()[0];
+    const managementNumber = bookValues[0] ? bookValues[0].toString().trim() : "";
+    const isbn = bookValues[1] ? normalizeIsbn_(bookValues[1]) : "";
+    const title = bookValues[2] ? bookValues[2].toString() : "";
+    if ((bookValues[6] || "").toString().trim() === "廃棄") {
+      return { success: false, message: `「${title}」は廃棄済みのため予約できません。` };
+    }
+
+    // 在庫チェック: 同一ISBNのいずれかのコピー(ISBNなしなら当該コピー)に在庫があれば予約不要
+    let hasAvailableCopy = false;
+    if (isbn) {
+      const copyRows = findRowsByNormalizedIsbn_(bookSheet, 2, isbn);
+      for (const rowNum of copyRows) {
+        const status = bookSheet.getRange(rowNum, 7).getValue();
+        if ((status || "").toString().trim() === "在庫") {
+          hasAvailableCopy = true;
+          break;
+        }
+      }
+    } else {
+      hasAvailableCopy = (bookValues[6] || "").toString().trim() === "在庫";
+    }
+    if (hasAvailableCopy) {
+      return { success: false, message: `「${title}」は在庫があります。予約せずにそのまま貸出できます。` };
+    }
+
+    const reservationKey = isbn || managementNumber;
+    const sheet = ensureReservationSheet_();
+    const actives = loadActiveReservations_().actives;
+
+    // 同一キー×同一利用者の重複予約を拒否
+    const duplicate = actives.find(r =>
+      r.bookKey === reservationKey && r.userId.toLowerCase() === uid.toLowerCase()
+    );
+    if (duplicate) {
+      return { success: false, message: `「${title}」は既に ${userName} さんが予約中です(予約ID: ${duplicate.reservationId})。` };
+    }
+    const queuePosition = actives.filter(r => r.bookKey === reservationKey).length + 1;
+
+    const reservationId = "R" + new Date().getTime();
+    sheet.appendRow([reservationId, reservationKey, title, uid, userName, new Date(), "予約中", ""]);
+    console.log(`予約登録: ${reservationId} 「${title}」 利用者 ${uid} (順番 ${queuePosition})`);
+    return {
+      success: true,
+      message: `「${title}」を ${userName} さんの名前で予約しました(予約順: ${queuePosition}番目)。返却され次第、取り置きの案内が表示されます。`,
+      reservationId: reservationId
+    };
+  } catch (error) {
+    console.error(`予約登録中にエラーが発生しました: ${error}`);
+    return { success: false, message: `予約登録に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 予約を取り消す関数(公開ラッパー)
+ * @param {string} reservationId - 予約ID
+ * @return {object} 処理結果 {success: boolean, message: string}
+ */
+function cancelReservation(reservationId) {
+  return runWithScriptLock_(
+    () => cancelReservation_(reservationId),
+    { success: false, message: LOCK_BUSY_MESSAGE }
+  );
+}
+
+function cancelReservation_(reservationId) {
+  try {
+    const id = reservationId ? reservationId.toString().trim() : "";
+    if (!id) {
+      return { success: false, message: "予約IDが指定されていません。" };
+    }
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("予約DB");
+    if (!sheet) {
+      return { success: false, message: "予約DBシートが見つかりません。" };
+    }
+    const rowNum = findRowByValue_(sheet, 1, id);
+    if (rowNum === -1) {
+      return { success: false, message: `予約ID ${id} が見つかりません。` };
+    }
+    const col = SCHEMA["予約DB"].col;
+    const rowValues = sheet.getRange(rowNum, 1, 1, SCHEMA["予約DB"].headers.length).getValues()[0];
+    if (rowValues[col.状態] !== "予約中") {
+      return { success: false, message: `この予約は既に処理済みです(状態: ${rowValues[col.状態]})。` };
+    }
+    sheet.getRange(rowNum, col.状態 + 1).setValue("取消");
+    sheet.getRange(rowNum, col.処理日時 + 1).setValue(new Date());
+    const title = rowValues[col.書籍名] ? rowValues[col.書籍名].toString() : id;
+    console.log(`予約取消: ${id} 「${title}」`);
+    return { success: true, message: `「${title}」の予約を取り消しました。` };
+  } catch (error) {
+    console.error(`予約取消中にエラーが発生しました: ${error}`);
+    return { success: false, message: `予約取消に失敗しました: ${error.message}` };
+  }
+}
+
+/**
+ * 予約中の一覧を取得する関数(読み取り専用・予約管理ページ用)
+ * @return {object} {success: boolean, message: string, reservations: Array<object>}
+ */
+function getActiveReservations() {
+  try {
+    const actives = loadActiveReservations_().actives;
+    return {
+      success: true,
+      message: actives.length === 0 ? "予約中の本はありません。" : `${actives.length}件の予約があります。`,
+      reservations: actives.map(r => ({
+        reservationId: r.reservationId,
+        bookKey: r.bookKey,
+        bookTitle: r.bookTitle,
+        userId: r.userId,
+        userName: r.userName,
+        reservedAt: (r.reservedAt instanceof Date && !isNaN(r.reservedAt)) ? r.reservedAt.toISOString() : ""
+      }))
+    };
+  } catch (error) {
+    console.error(`予約一覧の取得中にエラーが発生しました: ${error}`);
+    return { success: false, message: `予約一覧の取得に失敗しました: ${error.message}`, reservations: [] };
+  }
+}
+
+/**
+ * 返却された本に予約が入っていれば取り置き案内を作り、予約者へ入荷メールを送る補助関数。
+ * 予約の状態は変更しない(貸出成立時に processBulkLending_ が「貸出済」へ更新する)。
+ * メールはベストエフォート(enableEmail=false・アドレス未登録・クォータ枯渇時はスキップ)。
+ * @param {Array<string>} returnedBookIds - 返却された管理番号の配列
+ * @return {Array<string>} 結果メッセージへ追記する案内文の配列
+ */
+function buildReservationNoticesForReturns_(returnedBookIds) {
+  try {
+    if (!returnedBookIds || returnedBookIds.length === 0) return [];
+    const { actives } = loadActiveReservations_();
+    if (actives.length === 0) return [];
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const bookSheet = ss.getSheetByName("書籍DB");
+    const notices = [];
+    const noticedReservationIds = new Set(); // 同一返却処理内の重複案内を防ぐ
+    let settings = null;
+    let emailByUserId = null; // 必要になったときだけ利用者DBを読む
+
+    returnedBookIds.forEach(bookId => {
+      const trimmedId = bookId ? bookId.toString().trim() : "";
+      if (!trimmedId) return;
+      let isbn = "";
+      if (bookSheet) {
+        const rowNum = findRowByValue_(bookSheet, 1, trimmedId);
+        if (rowNum !== -1) {
+          const value = bookSheet.getRange(rowNum, 2).getValue();
+          isbn = value ? value.toString() : "";
+        }
+      }
+      const reservation = findReservationForBook_(actives, trimmedId, isbn);
+      if (!reservation || noticedReservationIds.has(reservation.reservationId)) return;
+      noticedReservationIds.add(reservation.reservationId);
+      notices.push(`⚠ 「${reservation.bookTitle}」は ${reservation.userName} さん(ID: ${reservation.userId})が予約中です。取り置きしてください。`);
+
+      // 予約者への入荷メール(ベストエフォート)
+      try {
+        if (settings === null) {
+          try {
+            settings = getLibrarySettings();
+          } catch (e) {
+            settings = {};
+          }
+        }
+        if (settings.enableEmail === false) return;
+        if (emailByUserId === null) {
+          emailByUserId = {};
+          const userSheet = ss.getSheetByName("利用者DB");
+          if (userSheet) {
+            const userData = userSheet.getDataRange().getValues();
+            for (let i = 1; i < userData.length; i++) {
+              const rowUserId = userData[i][0] ? userData[i][0].toString().trim().toLowerCase() : "";
+              const email = userData[i][2] ? userData[i][2].toString().trim() : "";
+              if (rowUserId && email) {
+                emailByUserId[rowUserId] = email;
+              }
+            }
+          }
+        }
+        const email = emailByUserId[reservation.userId.toLowerCase()];
+        if (!email || MailApp.getRemainingDailyQuota() <= 0) return;
+        const libraryName = settings.libraryName || "図書館";
+        MailApp.sendEmail({
+          to: email,
+          subject: `【${libraryName}】ご予約の本が返却されました`,
+          body: `${reservation.userName} 様\n\n` +
+            `${libraryName}をご利用いただきありがとうございます。\n` +
+            `ご予約中の以下の本が返却されました。取り置きしていますので、お早めにお越しください。\n\n` +
+            `書籍名: ${reservation.bookTitle}\n\n` +
+            `${libraryName}`
+        });
+        console.log(`予約入荷メール送信: ${reservation.userId} (${email}) - ${reservation.bookTitle}`);
+      } catch (mailError) {
+        console.error(`予約入荷メールの送信に失敗しました: ${mailError}`);
+      }
+    });
+
+    return notices;
+  } catch (error) {
+    // 予約案内の失敗で返却処理自体を失敗にしない
+    console.error(`予約案内の作成中にエラーが発生しました: ${error}`);
+    return [];
   }
 }
 
@@ -1020,6 +1392,12 @@ function processBulkReturnByRowNumbers_(records) {
       message += ` ${errorCount} 件のエラーが発生しました。`;
     }
 
+    // 返却した本に予約が入っていれば取り置き案内を追記し、予約者へ入荷メールを送る
+    const reservationNotices = buildReservationNoticesForReturns_(returnedBookIds);
+    if (reservationNotices.length > 0) {
+      message += "\n" + reservationNotices.join("\n");
+    }
+
     console.log("一括返却処理完了:", message);
     return {
       success: successCount > 0,
@@ -1376,6 +1754,7 @@ function processBulkLending_(bulkData) {
         if (bookData[i][1]) {
           const isbn = normalizeIsbn_(bookData[i][1]);
           if (isbn) {
+            entry.isbn = isbn; // 予約照合用(予約キーはISBN優先)
             if (!copiesByIsbn.has(isbn)) {
               copiesByIsbn.set(isbn, []);
             }
@@ -1417,6 +1796,10 @@ function processBulkLending_(bulkData) {
     } catch (e) {
       console.log("設定の取得に失敗したため、デフォルトの貸出期間を使用します(貸出上限チェックはスキップ):", e);
     }
+
+    // 予約中の本の貸出制御(予約DBが無い環境では actives が空でチェックはスキップされる)
+    const reservationState = loadActiveReservations_();
+    const reservationsToFulfill = []; // 予約者本人への貸出が成立したら「貸出済」に更新する
 
     const lendingDate = new Date(); // 現在日時を貸出日時とする
     const dueDate = new Date(lendingDate.getTime() + lendingDays * 24 * 60 * 60 * 1000); // 貸出日から設定日数後
@@ -1481,6 +1864,18 @@ function processBulkLending_(bulkData) {
         return;
       }
 
+      // 予約チェック: 予約中の本は最先頭の予約者本人にのみ貸し出す
+      const reservation = findReservationForBook_(reservationState.actives, lendId, book.isbn || "");
+      if (reservation) {
+        if (reservation.userId.toLowerCase() !== normalizedUserId) {
+          errorCount++;
+          errorMessages.push(`${lendId}（予約あり: ${reservation.userName} さんが予約中）`);
+          console.warn(`貸出スキップ: 書籍ID ${lendId} は他の利用者(${reservation.userId})が予約中です。`);
+          return;
+        }
+        reservationsToFulfill.push(reservation);
+      }
+
       // 同一リクエスト内で同じ管理番号が重複指定された場合も2冊目以降を弾く
       book.status = "貸出中";
       activeLoanIds.add(lendId);
@@ -1509,6 +1904,18 @@ function processBulkLending_(bulkData) {
       rowsToMarkLent.forEach(rowNumber => {
         bookSheet.getRange(rowNumber, 7).setValue("貸出中");
       });
+
+      // 予約者本人への貸出が成立した予約を「貸出済」に更新する
+      if (reservationsToFulfill.length > 0 && reservationState.sheet) {
+        const resCol = SCHEMA["予約DB"].col;
+        const fulfilledRows = new Set(); // 同一予約への二重更新を防ぐ(複本を同時貸出した場合)
+        reservationsToFulfill.forEach(r => {
+          if (fulfilledRows.has(r.rowNumber)) return;
+          fulfilledRows.add(r.rowNumber);
+          reservationState.sheet.getRange(r.rowNumber, resCol.状態 + 1).setValue("貸出済");
+          reservationState.sheet.getRange(r.rowNumber, resCol.処理日時 + 1).setValue(new Date());
+        });
+      }
     }
 
     // 構造化された結果を返す(クライアントは success フラグで成否判定する)
@@ -2345,7 +2752,7 @@ function isDevelopmentMode_() {
  */
 function setupLibrarySystem() {
   // ヘッダー定義はSCHEMAが唯一の定義(設定DBは ensureSettingsSheet_ が担当)
-  const sheetDefinitions = ["書籍DB", "利用者DB", "貸出記録"].map(name => ({
+  const sheetDefinitions = ["書籍DB", "利用者DB", "貸出記録", "予約DB"].map(name => ({
     name: name,
     headers: SCHEMA[name].headers
   }));

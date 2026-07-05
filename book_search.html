@@ -40,6 +40,7 @@
                 <th>著者</th>
                 <th>状態</th>
                 <th>返却予定日</th>
+                <th>予約</th>
                 <th>管理番号</th>
                 <th>ISBN</th>
               </tr>
@@ -110,6 +111,17 @@
           dueCell.textContent = formatDate(item.dueDate);
           row.appendChild(dueCell);
 
+          const reserveCell = document.createElement('td');
+          if (item.status === '貸出中') {
+            const reserveBtn = document.createElement('button');
+            reserveBtn.textContent = '予約';
+            reserveBtn.addEventListener('click', function() {
+              reserveBook(item.managementNumber, item.title || '', reserveBtn);
+            });
+            reserveCell.appendChild(reserveBtn);
+          }
+          row.appendChild(reserveCell);
+
           const mnCell = document.createElement('td');
           mnCell.className = 'mono';
           mnCell.textContent = item.managementNumber || '';
@@ -122,6 +134,30 @@
 
           body.appendChild(row);
         });
+      }
+
+      // 貸出中の本を予約する(利用者IDを入力してもらいサーバーで検証)
+      function reserveBook(managementNumber, title, button) {
+        const input = window.prompt('「' + title + '」を予約する利用者IDを入力してください');
+        if (input === null) return; // キャンセル
+        const userId = input.trim();
+        if (!userId) {
+          setMessage('利用者IDを入力してください。');
+          return;
+        }
+        button.disabled = true;
+        setMessage('予約を登録中...');
+        google.script.run
+          .withSuccessHandler(response => {
+            button.disabled = false;
+            setMessage((response && response.message) || '予約に失敗しました。');
+          })
+          .withFailureHandler(error => {
+            button.disabled = false;
+            setMessage('予約エラー: ' + error.message);
+            console.error('予約エラー:', error);
+          })
+          .createReservation(managementNumber, userId);
       }
 
       function runSearch(queryFromScan) {
