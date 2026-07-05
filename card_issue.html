@@ -208,6 +208,10 @@
             console.log('検索結果:', result);
             if (result) {
               userNameField.value = result.name;
+              // カードのバーコードには正規のIDを使う(数字だけの入力でヒットした場合の補正)
+              if (result.userId) {
+                userIdField.value = result.userId;
+              }
               document.getElementById('user-info').classList.remove('hidden');
               showStatusMessage('利用者情報を取得しました', 'success');
             } else {

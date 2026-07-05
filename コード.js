@@ -931,9 +931,9 @@ function createReservation_(bookId, userId) {
     if (!userSheet) {
       throw new Error("利用者DBシートが見つかりません。");
     }
-    // 大文字小文字は無視して照合し(getUserInfo等と同じ扱い)、
+    // 大文字小文字無視+数字のみ入力のプレフィックス補完で照合し(getUserInfo等と同じ扱い)、
     // 予約DBにはシート上の正規の利用者IDを保存する
-    const userRowNum = findRowByValue_(userSheet, 1, uid, { matchCase: false });
+    const userRowNum = findUserRowByFlexibleId_(userSheet, uid);
     if (userRowNum === -1) {
       return { success: false, message: `利用者ID ${uid} が見つかりません。` };
     }
@@ -1436,6 +1436,56 @@ function getBookDetails(bookId) {
  * @param {string} userId - 利用者ID
  * @return {object|null} 利用者情報オブジェクト {name: string} または null
  */
+/**
+ * 利用者IDで利用者DBの行を検索する共通関数。
+ * まず入力そのまま(大文字小文字無視)で検索し、見つからず入力が数字のみの場合は
+ * 各利用者IDの数字部分との照合にフォールバックする(例:「00001」や「1」で
+ * R00001 がヒットする。バーコードを使わない手入力向け)。
+ * 数字照合は完全一致(先頭ゼロ含む)を優先し、なければ数値として一致を探す。
+ * 複数の利用者に一致した場合は曖昧なため見つからない扱いにする。
+ * 削除済みの利用者は数字照合の対象にしない(入力そのままの検索は従来どおり
+ * 行を返し、削除済みの扱いは呼び出し元が判定する)。
+ * @param {Sheet} userSheet - 利用者DBシート
+ * @param {string} userId - 入力された利用者ID
+ * @return {number} 行番号(1始まり)、見つからない場合は -1
+ */
+function findUserRowByFlexibleId_(userSheet, userId) {
+  const input = userId ? userId.toString().trim() : "";
+  if (!input) return -1;
+
+  const exactRow = findRowByValue_(userSheet, 1, input, { matchCase: false });
+  if (exactRow !== -1) return exactRow;
+  if (!/^\d+$/.test(input)) return -1;
+
+  const lastRow = userSheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const width = Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns());
+  const data = userSheet.getRange(2, 1, lastRow - 1, width).getValues();
+  const statusIndex = SCHEMA["利用者DB"].col.状態;
+  const inputNumber = parseInt(input, 10);
+  const exactDigitRows = [];
+  const numericRows = [];
+  for (let i = 0; i < data.length; i++) {
+    if (statusIndex < width && (data[i][statusIndex] || "").toString().trim() === "削除済み") continue;
+    const id = data[i][0] ? data[i][0].toString().trim() : "";
+    if (!id) continue;
+    const digits = id.replace(/\D/g, "");
+    if (!digits) continue;
+    if (digits === input) {
+      exactDigitRows.push(i + 2);
+    }
+    if (parseInt(digits, 10) === inputNumber) {
+      numericRows.push(i + 2);
+    }
+  }
+  const candidates = exactDigitRows.length > 0 ? exactDigitRows : numericRows;
+  if (candidates.length > 1) {
+    console.warn(`利用者ID ${input} は複数の利用者に一致するため特定できません。`);
+    return -1;
+  }
+  return candidates.length === 1 ? candidates[0] : -1;
+}
+
 function getUserInfo(userId) {
   if (!userId) {
     console.error("利用者IDが指定されていません。");
@@ -1451,8 +1501,8 @@ function getUserInfo(userId) {
      }
 
     // ヘッダー: A:利用者ID, B:氏名, C:メールアドレス
-    // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
-    const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
+    // 入力そのまま→数字のみ入力のプレフィックス補完の順で検索する
+    const rowNumber = findUserRowByFlexibleId_(userSheet, userId);
     if (rowNumber !== -1) {
       // 既存シートが6列(状態列なし)の場合に範囲外エラーにならないよう実列数でクランプする
       const row = userSheet.getRange(rowNumber, 1, 1, Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns())).getValues()[0];
@@ -1463,8 +1513,9 @@ function getUserInfo(userId) {
       }
       const userName = row[1] || "氏名不明";
       console.log(`利用者情報取得成功: ${userName}`);
-      // クライアントは氏名しか使わないため、メールアドレス等のPIIは返さない
-      return { name: userName };
+      // クライアントには氏名と正規の利用者IDのみ返す(メールアドレス等のPIIは返さない)。
+      // 数字だけの入力でヒットした場合、後続処理(貸出記録・カード印字)には正規IDを使わせる
+      return { name: userName, userId: row[0] ? row[0].toString().trim() : userId.toString().trim() };
     }
     console.warn(`利用者ID ${userId} の情報が見つかりませんでした。`);
     return null; // 見つからなかった場合
@@ -2373,7 +2424,7 @@ function getUserRentals(userId) {
   logs.push(`利用者の貸出記録検索開始: 利用者ID=${userId}`);
   console.log(`利用者の貸出記録検索開始: 利用者ID=${userId}`);
   Logger.log(`デバッグ\t利用者の貸出記録検索開始: 利用者ID=${userId}`);
-  
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const lendingSheet = ss.getSheetByName("貸出記録");
@@ -2382,6 +2433,21 @@ function getUserRentals(userId) {
       logs.push(errorMsg);
       console.error(errorMsg);
       throw new Error("貸出記録シートが見つかりません。");
+    }
+
+    // 利用者DBで正規のIDに解決してから貸出記録を照合する
+    // (数字だけの入力でも R00001 のようなプレフィックス付きIDにヒットさせるため)
+    let canonicalUserId = userId.toString().trim();
+    const userSheetForResolve = ss.getSheetByName("利用者DB");
+    if (userSheetForResolve) {
+      const userRowNumber = findUserRowByFlexibleId_(userSheetForResolve, canonicalUserId);
+      if (userRowNumber !== -1) {
+        const idValue = userSheetForResolve.getRange(userRowNumber, 1).getValue();
+        if (idValue) {
+          canonicalUserId = idValue.toString().trim();
+          logs.push(`利用者IDを正規化: ${userId} → ${canonicalUserId}`);
+        }
+      }
     }
 
     const data = lendingSheet.getDataRange().getValues();
@@ -2405,13 +2471,13 @@ function getUserRentals(userId) {
       const rowUserId = row[userIdColIndex] ? row[userIdColIndex].toString().trim() : "";
       
       // デバッグ用にログ出力
-      logs.push(`行 ${i + 1} 検証中: シートの利用者ID=[${rowUserId}], 検索対象の利用者ID=[${userId.trim()}]`);
-      Logger.log(`デバッグ\t行 ${i + 1} 検証中: シートの利用者ID=[${rowUserId}], 検索対象の利用者ID=[${userId.trim()}]`);
-      
+      logs.push(`行 ${i + 1} 検証中: シートの利用者ID=[${rowUserId}], 検索対象の利用者ID=[${canonicalUserId}]`);
+      Logger.log(`デバッグ\t行 ${i + 1} 検証中: シートの利用者ID=[${rowUserId}], 検索対象の利用者ID=[${canonicalUserId}]`);
+
       // 利用者IDが一致する行を探す
       // 詳細なデバッグ情報を追加
       const rowUserIdLower = rowUserId.toLowerCase();
-      const userIdLower = userId.trim().toLowerCase();
+      const userIdLower = canonicalUserId.toLowerCase();
       const isIdMatch = rowUserIdLower === userIdLower;
       Logger.log(`デバッグ\t行 ${i + 1} 詳細比較: ID一致=${isIdMatch}(${rowUserIdLower}=${userIdLower})`);
       
@@ -2758,8 +2824,8 @@ function getUserDetails(userId) {
     }
     
     // ヘッダー: A:利用者ID, B:氏名, C:メール, D:電話番号, E:住所, F:登録日
-    // TextFinderでA列を検索(既存挙動に合わせて大文字小文字は無視)
-    const rowNumber = findRowByValue_(userSheet, 1, userId, { matchCase: false });
+    // 入力そのまま→数字のみ入力のプレフィックス補完の順で検索する
+    const rowNumber = findUserRowByFlexibleId_(userSheet, userId);
     if (rowNumber !== -1) {
       // 既存シートが6列(状態列なし)の場合に範囲外エラーにならないよう実列数でクランプする
       const row = userSheet.getRange(rowNumber, 1, 1, Math.min(SCHEMA["利用者DB"].headers.length, userSheet.getMaxColumns())).getValues()[0];
