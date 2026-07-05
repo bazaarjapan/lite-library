@@ -440,7 +440,8 @@ function renewLending(bookId, rowNumber, userId, lendingDate) {
 }
 
 /**
- * 貸出延長の実装。未返却の貸出記録の返却予定日を「今日+貸出期間」に更新する。
+ * 貸出延長の実装。未返却の貸出記録の返却予定日を
+ * 「max(今日, 現在の返却予定日)+貸出期間」に更新する(延長は必ず期限を延ばす)。
  * - 延滞中(返却予定日が今日より前)は延長不可
  * - 「延長回数」列(ヘッダー名で特定・なければI列以降に追加)で回数を管理し、
  *   設定 maxRenewals(既定1、0以下で延長禁止)を超える延長を拒否する
@@ -537,11 +538,18 @@ function renewLending_(bookId, rowNumber, userId, lendingDate) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const dueDateValue = row[5];
+    // 延長の起点は「今日」と「現在の返却予定日」の遅い方にする
+    // (今日起点だと、期限まで貸出期間ちょうど残っている本は延長しても期限が
+    //  変わらず、期限がさらに先の本は逆に縮んでしまうため。延長は必ず期限を延ばす)
+    let baseDate = today;
     if (dueDateValue instanceof Date && !isNaN(dueDateValue)) {
       const dueDate = new Date(dueDateValue);
       dueDate.setHours(0, 0, 0, 0);
       if (dueDate < today) {
         return { success: false, message: "返却期限を過ぎているため延長できません。いったん返却してください。" };
+      }
+      if (dueDate > baseDate) {
+        baseDate = dueDate;
       }
     }
 
@@ -550,7 +558,7 @@ function renewLending_(bookId, rowNumber, userId, lendingDate) {
       return { success: false, message: `延長は${maxRenewals}回までです(既に${currentRenewals}回延長済み)。` };
     }
 
-    const newDueDate = new Date(today.getTime() + lendingDays * 24 * 60 * 60 * 1000);
+    const newDueDate = new Date(baseDate.getTime() + lendingDays * 24 * 60 * 60 * 1000);
     lendingSheet.getRange(targetIndex + 1, 6).setValue(newDueDate);
     lendingSheet.getRange(targetIndex + 1, renewCol).setValue(currentRenewals + 1);
 
