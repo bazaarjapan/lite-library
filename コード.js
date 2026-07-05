@@ -426,11 +426,13 @@ function getAvailableBook(isbn) {
 /**
  * 貸出を延長する関数(公開ラッパー)
  * @param {string} bookId - 延長する貸出記録の書籍ID(管理番号)
+ * @param {number} rowNumber - 貸出記録シートの行番号(1始まり)。同一管理番号の
+ *                             未返却が重複する異常データでも、クリックした行だけを延長するため
  * @return {object} 処理結果 {success: boolean, message: string, newDueDate?: string}
  */
-function renewLending(bookId) {
+function renewLending(bookId, rowNumber) {
   return runWithScriptLock_(
-    () => renewLending_(bookId),
+    () => renewLending_(bookId, rowNumber),
     { success: false, message: LOCK_BUSY_MESSAGE }
   );
 }
@@ -443,7 +445,7 @@ function renewLending(bookId) {
  * - 延長成功時は「最終通知日」「リマインダー送信日」をクリアし、
  *   新しい期限に対して通知・リマインダーが再送されるようにする
  */
-function renewLending_(bookId) {
+function renewLending_(bookId, rowNumber) {
   try {
     const id = bookId ? bookId.toString().trim() : "";
     if (!id) {
@@ -490,16 +492,33 @@ function renewLending_(bookId) {
       lendingSheet.getRange(1, renewCol).setValue("延長回数");
     }
 
-    // 未返却の貸出記録を書籍ID(管理番号)で探す
+    // 対象行の特定。クライアントが行番号を持っている場合はそれを使い、
+    // 書籍ID・未返却であることを検証する(同一管理番号の未返却が重複する
+    // 異常データでも、クリックした行以外を延長しないため。行番号は返却処理や
+    // アーカイブでずれることがあるので、検証に失敗したら再検索を促す)
     let targetIndex = -1;
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][6] === "未返却" && data[i][0] && data[i][0].toString().trim() === id) {
-        targetIndex = i;
-        break;
+    const parsedRowNumber = parseInt(rowNumber, 10);
+    if (!isNaN(parsedRowNumber) && parsedRowNumber >= 2) {
+      if (parsedRowNumber > data.length) {
+        return { success: false, message: "貸出記録が更新されています。もう一度検索してから延長してください。" };
       }
-    }
-    if (targetIndex === -1) {
-      return { success: false, message: `書籍ID ${id} の未返却の貸出記録が見つかりません。` };
+      const candidate = data[parsedRowNumber - 1];
+      const candidateId = candidate[0] ? candidate[0].toString().trim() : "";
+      if (candidateId !== id || candidate[6] !== "未返却") {
+        return { success: false, message: "貸出記録が更新されています。もう一度検索してから延長してください。" };
+      }
+      targetIndex = parsedRowNumber - 1;
+    } else {
+      // 行番号なしの呼び出しは書籍ID(管理番号)で探す(未返却は本来1件のみ)
+      for (let i = 1; i < data.length; i++) {
+        if (data[i][6] === "未返却" && data[i][0] && data[i][0].toString().trim() === id) {
+          targetIndex = i;
+          break;
+        }
+      }
+      if (targetIndex === -1) {
+        return { success: false, message: `書籍ID ${id} の未返却の貸出記録が見つかりません。` };
+      }
     }
 
     const row = data[targetIndex];

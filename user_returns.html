@@ -418,7 +418,7 @@
               <td>${record.bookTitle || 'N/A'}</td>
               <td>${lendingDateStr}</td>
               <td>${dueDateStr}</td>
-              <td><button class="renew-button" data-book-id="${record.bookId}" onclick="renewBook(this)">延長</button></td>
+              <td><button class="renew-button" data-book-id="${record.bookId}" data-row-number="${record.rowNumber}" onclick="renewBook(this)">延長</button></td>
             </tr>
           `;
         });
@@ -435,9 +435,12 @@
         updateBulkReturnButtonState(); // ボタンの初期状態を設定
       }
       
-      // 1冊の貸出を延長する関数(サーバー側で延滞・回数上限をチェックする)
+      // 1冊の貸出を延長する関数(サーバー側で延滞・回数上限をチェックする)。
+      // 行番号も渡し、同一管理番号の未返却が重複する異常データでも
+      // クリックした行だけが延長されるようにする
       function renewBook(button) {
         const bookId = button.getAttribute('data-book-id');
+        const rowNumber = parseInt(button.getAttribute('data-row-number'), 10);
         if (!bookId) return;
         button.disabled = true;
         setMessage(`書籍 [${bookId}] の貸出を延長中...`);
@@ -456,7 +459,7 @@
             console.error('貸出延長エラー:', error);
             button.disabled = false;
           })
-          .renewLending(bookId);
+          .renewLending(bookId, rowNumber);
       }
 
       // 全てのチェックボックスの選択/解除を切り替える関数
