@@ -379,6 +379,13 @@
     color: var(--danger);
     border-bottom-color: #d9a49f;
   }
+  /* メッセージ表示中はコンテンツ上部に余白を確保し、固定バーが先頭の
+     入力欄・ボタンを覆わないようにする(:has非対応の古いブラウザでは
+     従来どおり重なるだけで操作自体は下部のスクロールで可能) */
+  body:has(#message:not(:empty)) .app-main,
+  body:has(#status-message:not(.hidden):not(:empty)) .app-main {
+    padding-top: 4.5rem;
+  }
 
   /* ---- ページ内スキャナーオーバーレイ(旧Quaggaフォールバック・全ページ共通) ---- */
   .scanner-container {
