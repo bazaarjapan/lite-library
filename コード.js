@@ -428,11 +428,13 @@ function getAvailableBook(isbn) {
  * @param {string} bookId - 延長する貸出記録の書籍ID(管理番号)
  * @param {number} rowNumber - 貸出記録シートの行番号(1始まり)。同一管理番号の
  *                             未返却が重複する異常データでも、クリックした行だけを延長するため
+ * @param {string} userId - クリックした記録の利用者ID(行ずれ検証用)
+ * @param {string} lendingDate - クリックした記録の貸出日時(ISO文字列・行ずれ検証用)
  * @return {object} 処理結果 {success: boolean, message: string, newDueDate?: string}
  */
-function renewLending(bookId, rowNumber) {
+function renewLending(bookId, rowNumber, userId, lendingDate) {
   return runWithScriptLock_(
-    () => renewLending_(bookId, rowNumber),
+    () => renewLending_(bookId, rowNumber, userId, lendingDate),
     { success: false, message: LOCK_BUSY_MESSAGE }
   );
 }
@@ -445,7 +447,7 @@ function renewLending(bookId, rowNumber) {
  * - 延長成功時は「最終通知日」「リマインダー送信日」をクリアし、
  *   新しい期限に対して通知・リマインダーが再送されるようにする
  */
-function renewLending_(bookId, rowNumber) {
+function renewLending_(bookId, rowNumber, userId, lendingDate) {
   try {
     const id = bookId ? bookId.toString().trim() : "";
     if (!id) {
@@ -504,7 +506,17 @@ function renewLending_(bookId, rowNumber) {
       }
       const candidate = data[parsedRowNumber - 1];
       const candidateId = candidate[0] ? candidate[0].toString().trim() : "";
-      if (candidateId !== id || candidate[6] !== "未返却") {
+      // 書籍ID+未返却だけでは、アーカイブ等の行ずれと重複未返却が重なった場合に
+      // 別の行を誤って受理し得るため、利用者IDと貸出日時も照合する
+      const candidateUserId = candidate[2] ? candidate[2].toString().trim().toLowerCase() : "";
+      const expectedUserId = userId ? userId.toString().trim().toLowerCase() : "";
+      const candidateLendingDate = (candidate[4] instanceof Date && !isNaN(candidate[4]))
+        ? candidate[4].toISOString()
+        : "";
+      const expectedLendingDate = lendingDate ? lendingDate.toString().trim() : "";
+      if (candidateId !== id || candidate[6] !== "未返却" ||
+          (expectedUserId !== "" && candidateUserId !== expectedUserId) ||
+          (expectedLendingDate !== "" && candidateLendingDate !== expectedLendingDate)) {
         return { success: false, message: "貸出記録が更新されています。もう一度検索してから延長してください。" };
       }
       targetIndex = parsedRowNumber - 1;
