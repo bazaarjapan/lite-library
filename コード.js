@@ -664,9 +664,31 @@ function loadActiveReservations_() {
 }
 
 /**
+ * 取り置き中の予約が取消された本について、次の予約者(最古の予約中)へ
+ * 取り置きを引き継ぐ補助関数。引き継いだ予約者には案内メールを送る(ベストエフォート)。
+ * 取消の反映後に呼ぶこと(有効予約を再読込して探すため)。
+ * @param {Sheet} sheet - 予約DBシート
+ * @param {string} bookKey - 予約キー(正規化ISBNまたは管理番号)
+ * @return {object|null} 引き継いだ予約、なければ null
+ */
+function promoteNextReservation_(sheet, bookKey) {
+  if (!sheet || !bookKey) return null;
+  const col = SCHEMA["予約DB"].col;
+  const nextReservation = loadActiveReservations_().actives.find(r =>
+    r.status === "予約中" && r.bookKey === bookKey
+  );
+  if (!nextReservation) return null;
+  sheet.getRange(nextReservation.rowNumber, col.状態 + 1).setValue("取り置き中");
+  sendReservationHoldEmail_(nextReservation);
+  console.log(`取り置きを引き継ぎました: ${nextReservation.reservationId} 「${nextReservation.bookTitle}」→ ${nextReservation.userId}`);
+  return nextReservation;
+}
+
+/**
  * 利用者の有効な予約(予約中・取り置き中)をすべて取消する補助関数。
  * 利用者の論理削除時に呼び、削除済み利用者の予約が貸出・延長・返却案内を
- * ブロックし続けないようにする。失敗しても呼び出し元の処理は失敗にしない。
+ * ブロックし続けないようにする。取り置き中だった本は次の予約者へ引き継ぐ。
+ * 失敗しても呼び出し元の処理は失敗にしない。
  * @param {string} userId - 利用者ID
  */
 function cancelActiveReservationsForUser_(userId) {
@@ -675,13 +697,19 @@ function cancelActiveReservationsForUser_(userId) {
     if (!sheet || actives.length === 0) return;
     const normalized = userId.toString().trim().toLowerCase();
     const col = SCHEMA["予約DB"].col;
+    const freedHoldKeys = [];
     actives.forEach(reservation => {
       if (reservation.userId.toLowerCase() === normalized) {
         sheet.getRange(reservation.rowNumber, col.状態 + 1).setValue("取消");
         sheet.getRange(reservation.rowNumber, col.処理日時 + 1).setValue(new Date());
+        if (reservation.status === "取り置き中") {
+          freedHoldKeys.push(reservation.bookKey);
+        }
         console.log(`利用者削除に伴い予約を取消しました: ${reservation.reservationId} 「${reservation.bookTitle}」`);
       }
     });
+    // 空いた取り置きを次の予約者へ引き継ぐ(取消は反映済みなので再読込に含まれない)
+    freedHoldKeys.forEach(bookKey => promoteNextReservation_(sheet, bookKey));
   } catch (error) {
     console.error(`利用者の予約取消中にエラーが発生しました: ${error}`);
   }
@@ -907,14 +935,9 @@ function cancelReservation_(reservationId) {
     // 新規予約も「在庫があります」と拒否され続ける
     if (rowValues[col.状態] === "取り置き中") {
       const bookKey = rowValues[col.書籍ID] ? rowValues[col.書籍ID].toString().trim() : "";
-      const nextReservation = loadActiveReservations_().actives.find(r =>
-        r.status === "予約中" && r.bookKey === bookKey
-      );
+      const nextReservation = promoteNextReservation_(sheet, bookKey);
       if (nextReservation) {
-        sheet.getRange(nextReservation.rowNumber, col.状態 + 1).setValue("取り置き中");
-        sendReservationHoldEmail_(nextReservation);
         message += ` 空いたコピーを次の予約者 ${nextReservation.userName} さん(ID: ${nextReservation.userId})の取り置きに引き継ぎました。`;
-        console.log(`取り置きを引き継ぎ: ${nextReservation.reservationId}`);
       }
     }
     return { success: true, message: message };
