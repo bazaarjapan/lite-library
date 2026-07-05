@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <title>予約管理</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <?!= includeHtml_('common_styles'); ?>
+    <style>
+      /* ページ固有: 書籍名列は折り返しを許可する */
+      #reservations-table td.title-cell { white-space: normal; min-width: 12rem; }
+      #empty-state { display: none; }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <a href="#" class="app-header-back js-menu-link">← メニュー</a>
+      <span class="app-header-title"><span class="group-dot lending"></span>予約管理</span>
+    </header>
+
+    <main class="app-main wide">
+      <div class="card">
+        <h2 class="card-title">予約中の一覧</h2>
+        <div class="table-wrap">
+          <table id="reservations-table" style="display: none;">
+            <thead>
+              <tr>
+                <th>予約日時</th>
+                <th>書籍名</th>
+                <th>利用者</th>
+                <th>状態</th>
+                <th>予約キー</th>
+                <th>取消</th>
+              </tr>
+            </thead>
+            <tbody id="reservations-body"></tbody>
+          </table>
+        </div>
+        <p id="empty-state" class="loading">読み込み中...</p>
+        <div class="button-group">
+          <button id="reload-button">再読込</button>
+        </div>
+      </div>
+
+      <p id="message"></p>
+    </main>
+
+    <script>
+      function setMessage(msg) {
+        document.getElementById('message').innerText = msg;
+      }
+
+      function formatDateTime(isoStr) {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        if (isNaN(d)) return '';
+        return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() +
+          ' ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2);
+      }
+
+      function renderReservations(reservations) {
+        const table = document.getElementById('reservations-table');
+        const body = document.getElementById('reservations-body');
+        const empty = document.getElementById('empty-state');
+        body.innerHTML = '';
+
+        if (!reservations || reservations.length === 0) {
+          table.style.display = 'none';
+          empty.style.display = 'block';
+          empty.textContent = '予約中の本はありません。予約は蔵書検索の「貸出中」の本から登録できます。';
+          return;
+        }
+
+        empty.style.display = 'none';
+        table.style.display = 'table';
+        reservations.forEach(item => {
+          const row = document.createElement('tr');
+
+          const dateCell = document.createElement('td');
+          dateCell.textContent = formatDateTime(item.reservedAt);
+          row.appendChild(dateCell);
+
+          const titleCell = document.createElement('td');
+          titleCell.className = 'title-cell';
+          titleCell.textContent = item.bookTitle || '(書名なし)';
+          row.appendChild(titleCell);
+
+          const userCell = document.createElement('td');
+          userCell.textContent = (item.userName || '') + ' (' + (item.userId || '') + ')';
+          row.appendChild(userCell);
+
+          const statusCell = document.createElement('td');
+          const statusBadge = document.createElement('span');
+          statusBadge.className = 'badge ' + (item.status === '取り置き中' ? 'badge-ok' : 'badge-warn');
+          statusBadge.textContent = item.status || '予約中';
+          statusCell.appendChild(statusBadge);
+          row.appendChild(statusCell);
+
+          const keyCell = document.createElement('td');
+          keyCell.className = 'mono';
+          keyCell.textContent = item.bookKey || '';
+          row.appendChild(keyCell);
+
+          const cancelCell = document.createElement('td');
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'btn-danger';
+          cancelBtn.textContent = '取消';
+          cancelBtn.addEventListener('click', function() {
+            cancelReservation(item.reservationId, item.bookTitle || '', cancelBtn);
+          });
+          cancelCell.appendChild(cancelBtn);
+          row.appendChild(cancelCell);
+
+          body.appendChild(row);
+        });
+      }
+
+      function loadReservations() {
+        setMessage('');
+        document.getElementById('empty-state').style.display = 'block';
+        document.getElementById('empty-state').textContent = '読み込み中...';
+        google.script.run
+          .withSuccessHandler(response => {
+            if (response && response.success) {
+              renderReservations(response.reservations);
+            } else {
+              renderReservations([]);
+              setMessage((response && response.message) || '予約一覧の取得に失敗しました。');
+            }
+          })
+          .withFailureHandler(error => {
+            renderReservations([]);
+            setMessage('読み込みエラー: ' + error.message);
+            console.error('予約一覧エラー:', error);
+          })
+          .getActiveReservations();
+      }
+
+      function cancelReservation(reservationId, title, button) {
+        if (!window.confirm('「' + title + '」の予約を取り消しますか?')) return;
+        button.disabled = true;
+        setMessage('予約を取り消し中...');
+        google.script.run
+          .withSuccessHandler(response => {
+            setMessage((response && response.message) || '取消に失敗しました。');
+            if (response && response.success) {
+              loadReservations();
+            } else {
+              button.disabled = false;
+            }
+          })
+          .withFailureHandler(error => {
+            button.disabled = false;
+            setMessage('取消エラー: ' + error.message);
+            console.error('予約取消エラー:', error);
+          })
+          .cancelReservation(reservationId);
+      }
+
+      window.onload = function() {
+        document.getElementById('reload-button').addEventListener('click', loadReservations);
+        loadReservations();
+      };
+    </script>
+    <script>
+      // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
+      (function() {
+        const url = '<?!= getWebAppUrl(); ?>';
+        document.querySelectorAll('.js-menu-link').forEach(el => { el.href = url; });
+      })();
+    </script>
+  </body>
+</html>
