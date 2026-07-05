@@ -35,7 +35,7 @@ Google Apps Script(GAS)+ Googleスプレッドシートで動く、小規模図�
 
 ### 開発者向け(このリポジトリから構築する場合)
 
-テンプレートを使わず自分のスプレッドシートに導入する場合は、拡張機能 → Apps Script でプロジェクトを開き、[clasp](https://github.com/google/clasp) で取り込みます(`.clasp.json` の `scriptId` を書き換えて `clasp push`)。その後 Apps Script エディタから `setupLibrarySystem` を一度実行すると、必要なシートとヘッダーが自動作成されます(冪等・既存データには触れません)。
+テンプレートを使わず自分のスプレッドシートに導入する場合は、拡張機能 → Apps Script でプロジェクトを開き、[clasp](https://github.com/google/clasp) で取り込みます(`.clasp.json.example` を `.clasp.json` にコピーし、`scriptId` を自分のプロジェクトのスクリプトID — Apps Scriptエディタの「プロジェクトの設定」で確認 — に書き換えて `clasp push`)。その後 Apps Script エディタから `setupLibrarySystem` を一度実行すると、必要なシートとヘッダーが自動作成されます(冪等・既存データには触れません)。
 
 ```sh
 # 開発コマンド
