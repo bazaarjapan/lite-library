@@ -1,0 +1,430 @@
+<style>
+  /*
+   * 共通デザインシステム(includeHtml_('common_styles') で各ページのheadに読み込む)。
+   * 方針: スマホ向け巨大px+body zoom縮小(旧responsive_scale)を廃止し、
+   * rem基準の通常サイズで書く。スマホ=1カラム、iPad/PC=.two-col で2カラム。
+   * ページ固有のスタイルは各ページの<style>に置き、共通部品はここに一元化する。
+   */
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+  :root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --text: #1c2024;
+    --text-muted: #667085;
+    --border: #d6dae0;
+    --border-strong: #b8bfc9;
+    /* アクセント: 深緑(貸出・返却などの処理系業務の基調色) */
+    --accent: #2e6e51;
+    --accent-strong: #245741;
+    --accent-soft: #e7f0eb;
+    /* 機能グループ識別色(メニューのグループと各ページヘッダーのドットで呼応) */
+    --group-lending: #2e6e51;   /* 貸出業務 */
+    --group-manage: #3b5b92;    /* 登録・管理 */
+    --group-report: #667085;    /* レポート・設定 */
+    --danger: #b3362c;
+    --danger-strong: #8f2b23;
+    --danger-soft: #f9ebea;
+    --success: #2e6e51;
+    --success-soft: #e7f0eb;
+    --info-soft: #eaf1f7;
+    --info-text: #2c5675;
+    --focus-ring: 0 0 0 3px rgba(46, 110, 81, 0.25);
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow: 0 1px 3px rgba(16, 24, 32, 0.08);
+    --header-h: 3rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { font-size: 16px; }
+
+  body {
+    margin: 0;
+    font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
+    min-height: 100vh;
+  }
+
+  /* ID・管理番号など機械的な値の表示用 */
+  .mono {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.95em;
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- スリムヘッダー(装飾タイトルの代替) ----
+     <header class="app-header">
+       <a class="app-header-back" href="...">← メニュー</a>
+       <span class="app-header-title"><span class="group-dot lending"></span>図書貸出</span>
+     </header> */
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 800;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: var(--header-h);
+    padding: 0 0.75rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .app-header-back {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 0.625rem;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+  .app-header-back:hover { background: var(--bg); color: var(--text); }
+  .app-header-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .group-dot {
+    flex-shrink: 0;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 3px;
+  }
+  .group-dot.lending { background: var(--group-lending); }
+  .group-dot.manage { background: var(--group-manage); }
+  .group-dot.report { background: var(--group-report); }
+
+  /* ---- コンテンツ領域 ---- */
+  .app-main {
+    max-width: 42.5rem; /* 680px: スマホ〜縦iPadの1カラム基準 */
+    margin: 0 auto;
+    padding: 1rem 1rem 3rem;
+  }
+  /* 2カラムを使うページは .app-main.wide + .two-col を併用 */
+  .app-main.wide { max-width: 70rem; }
+  @media (min-width: 1024px) {
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 1rem;
+      align-items: start;
+    }
+    .two-col > .span-2 { grid-column: 1 / -1; }
+  }
+
+  /* ---- カード・フォーム ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow);
+  }
+  .card-title {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 0.375rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text);
+  }
+  .field { margin-bottom: 0.875rem; }
+
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="date"],
+  select,
+  textarea {
+    width: 100%;
+    min-height: 2.75rem; /* 44px タッチターゲット */
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1rem;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select {
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23667085' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    padding-right: 2rem;
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: var(--focus-ring);
+  }
+  input[readonly], input:disabled {
+    background: var(--bg);
+    color: var(--text-muted);
+  }
+  ::placeholder { color: #98a2b3; }
+
+  /* ---- ボタン ----
+     素のbuttonは補助(白地)扱い。主要操作には .btn-primary を付ける。 */
+  button, .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-height: 2.75rem; /* 44px */
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  button:hover, .btn:hover { background: var(--bg); }
+  button:active, .btn:active { transform: translateY(1px); }
+  button:focus-visible, .btn:focus-visible, a:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+  button:disabled {
+    background: var(--bg);
+    color: #98a2b3;
+    border-color: var(--border);
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 700;
+  }
+  .btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .btn-primary:disabled {
+    background: var(--bg);
+    border-color: var(--border);
+    color: #98a2b3;
+  }
+
+  .btn-danger {
+    background: var(--surface);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .btn-danger:hover { background: var(--danger-soft); }
+
+  .btn-danger-solid {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
+    font-weight: 700;
+  }
+  .btn-danger-solid:hover { background: var(--danger-strong); border-color: var(--danger-strong); }
+
+  .btn-block { display: flex; width: 100%; }
+  .btn-lg { min-height: 3.25rem; font-size: 1.05rem; }
+
+  .button-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    margin-top: 1rem;
+  }
+  /* 入力欄+ボタンの横並び(スキャン・検索) */
+  .input-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+  .input-row input { flex: 1 1 auto; min-width: 0; }
+  .input-row button { flex-shrink: 0; }
+
+  /* ---- テーブル ---- */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  th, td {
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  th {
+    background: var(--bg);
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+  }
+  tbody tr:hover { background: #f0f4f2; }
+  input[type="checkbox"] {
+    width: 1.5rem;
+    height: 1.5rem;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  /* ---- 状態バッジ(在庫/貸出中/延滞など) ---- */
+  .badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .badge-ok { background: var(--success-soft); color: var(--success); }
+  .badge-warn { background: #f7efdc; color: #8a6116; }
+  .badge-danger { background: var(--danger-soft); color: var(--danger); }
+  .badge-muted { background: var(--bg); color: var(--text-muted); }
+
+  /* ---- 操作結果メッセージ(画面上部固定・空なら非表示) ----
+     デフォルトは情報(青系)。ページ側JSが .success / .error を付けると配色が変わる。 */
+  #message, #status-message { display: none; }
+  #message:not(:empty),
+  #status-message:not(.hidden):not(:empty) {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* スキャナーオーバーレイ(1000〜1002)や確認モーダル(1000)より下、ヘッダー(800)より上 */
+    z-index: 900;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    background: var(--info-soft);
+    color: var(--info-text);
+    border-bottom: 2px solid #a9c4d8;
+    box-shadow: 0 2px 8px rgba(16, 24, 32, 0.12);
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+  #message.success:not(:empty), #status-message.success:not(:empty) {
+    background: var(--success-soft);
+    color: var(--success);
+    border-bottom-color: #9dbfad;
+  }
+  #message.error:not(:empty), #status-message.error:not(:empty) {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-bottom-color: #d9a49f;
+  }
+
+  /* ---- ページ内スキャナーオーバーレイ(旧Quaggaフォールバック・全ページ共通) ---- */
+  .scanner-container {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .scanner-header {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0.75rem;
+    z-index: 1002;
+    display: flex;
+    gap: 0.5rem;
+  }
+  .close-scanner-btn {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #fff;
+  }
+  .camera-switch-btn {
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--text);
+  }
+  .scanner-viewport {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+  }
+  .scanner-viewport canvas,
+  .scanner-viewport video {
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    object-fit: cover !important;
+  }
+  .scanner-viewport br,
+  .scanner-viewport .drawingBuffer,
+  .scanner-viewport canvas:not(:last-child) { display: none !important; }
+
+  /* ---- ユーティリティ ---- */
+  .text-muted { color: var(--text-muted); }
+  .text-danger { color: var(--danger); }
+  .text-center { text-align: center; }
+  .loading {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem 1rem;
+    font-size: 0.95rem;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1rem 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>

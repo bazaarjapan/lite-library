@@ -2,553 +2,51 @@
 <html>
   <head>
     <base target="_top">
-    <title>貸出書籍検索システム</title>
+    <title>貸出書籍検索</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-  <?!= includeHtml_('responsive_scale'); ?>
+  <?!= includeHtml_('common_styles'); ?>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
-      @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&display=swap');
-
-      /* --- General Styles --- */
-      body {
-        font-family: 'Noto Sans JP', sans-serif;
-        background: linear-gradient(135deg, #f5f1e8 0%, #e8dfd2 100%);
-        color: #2c3e50;
-        margin: 0;
-        padding: 0;
-        line-height: 1.7;
-        font-size: 48px;
-        -webkit-text-size-adjust: 100%;
-        min-height: 100vh;
-        position: relative;
-      }
-      
-      body::before {
-        content: "";
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-image: 
-          repeating-linear-gradient(
-            45deg,
-            transparent,
-            transparent 35px,
-            rgba(139, 111, 78, 0.03) 35px,
-            rgba(139, 111, 78, 0.03) 70px
-          );
-        pointer-events: none;
-        z-index: 1;
-      }
-      
-      .container {
-        position: relative;
-        z-index: 2;
-        margin: 0;
-        padding: 45px;
-        background-color: rgba(255, 255, 255, 0.95);
-        width: 100%;
-        min-height: 100vh;
-        box-sizing: border-box;
-        box-shadow: 0 0 50px rgba(0, 0, 0, 0.1);
-      }
-      
-      h1 {
-        color: #8b6f4e;
-        margin-top: 0;
-        text-align: center;
-        margin-bottom: 90px;
-        border-bottom: 6px solid #d4af37;
-        padding-bottom: 60px;
-        font-size: 72px;
-        font-family: 'Noto Serif JP', serif;
-        font-weight: 700;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-        position: relative;
-      }
-      
-      h1::before {
-        content: "🔍";
-        display: block;
-        font-size: 48px;
-        margin-bottom: 20px;
-      }
-      
-      h2 {
-        margin-top: 120px;
-        text-align: left;
-        border-bottom: 4px solid #d4af37;
-        font-size: 60px;
-        color: #8b6f4e;
-        padding-left: 30px;
-        padding-right: 30px;
-        padding-bottom: 30px;
-        font-family: 'Noto Serif JP', serif;
-      }
-
-      /* --- Form Styles --- */
-      .form-group {
-        margin-bottom: 90px;
-        background: rgba(255, 255, 255, 0.7);
-        padding: 45px;
-        border-radius: 20px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      }
-      
-      label {
-        display: block;
-        margin-bottom: 45px;
-        font-weight: 700;
-        color: #8b6f4e;
-        font-size: 54px;
-        font-family: 'Noto Serif JP', serif;
-        position: relative;
-        padding-left: 60px;
-      }
-      
-      label::before {
-        content: "▸";
-        position: absolute;
-        left: 0;
-        color: #d4af37;
-        font-size: 48px;
-      }
-      
-      input[type="text"], input[type="number"] {
-        width: 100%;
-        padding: 45px;
-        border: 3px solid #d4af37;
-        border-radius: 24px;
-        box-sizing: border-box;
-        font-size: 48px;
-        font-family: 'Noto Sans JP', sans-serif;
-        -webkit-appearance: none;
-        appearance: none;
-        background: rgba(255, 255, 255, 0.9);
-        transition: all 0.3s ease;
-      }
-      
-      input[type="text"]:focus, input[type="number"]:focus {
-        outline: none;
-        border-color: #8b6f4e;
-        box-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
-      }
-      
-      input[readonly] {
-        background-color: #f5f1e8;
-        cursor: not-allowed;
-        border-color: #e8dfd2;
-      }
-      
-      /* カメラ切り替えボタン */
-      .camera-switch-btn {
-        background-color: #8b6f4e;
-        color: white;
-        border: none;
-        padding: 15px 30px;
-        font-size: 36px;
-        border-radius: 10px;
-        cursor: pointer;
-        margin-right: 20px;
-      }
-      
-      .camera-switch-btn:hover {
-        background-color: #6d5640;
-      }
-      
-      /* 基本ボタンスタイル */
-      button {
-        color: white;
-        padding: 45px 60px;
-        border: none;
-        border-radius: 24px;
-        cursor: pointer;
-        font-size: 48px;
-        font-weight: 700;
-        transition: all 0.3s ease;
-        margin-top: 45px;
-        font-family: 'Noto Sans JP', sans-serif;
-        -webkit-tap-highlight-color: transparent;
-        touch-action: manipulation;
-        min-height: 132px;
-        background: linear-gradient(135deg, #8b6f4e 0%, #6d5a3f 100%);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
-      }
-      
-      button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-      }
-      
-      button:active {
-        transform: translateY(0);
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-      }
-      
-      button:disabled {
-        background: linear-gradient(135deg, #cccccc 0%, #999999 100%);
-        color: #666666;
-        cursor: not-allowed;
-        opacity: 0.7;
-        box-shadow: none;
-        transform: none;
-      }
-      
-      /* スキャンボタン */
-      #scan-book-id-button {
-        padding: 36px 60px;
-        background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
-        margin-right: 30px;
-        font-size: 48px;
-        font-weight: 400;
-      }
-      
-      #scan-book-id-button:hover {
-        background: linear-gradient(135deg, #5a6268 0%, #495057 100%);
-      }
-      
-      /* 検索ボタン */
-      button[onclick="searchRentalRecords()"] {
-        margin-top: 60px;
-        font-weight: 400;
-        padding: 45px 60px;
-        font-size: 48px;
-        width: 100%;
-        min-height: 150px;
-        background: linear-gradient(135deg, #d4af37 0%, #b8941f 100%);
-      }
-      
-      button[onclick="searchRentalRecords()"]:hover {
-        background: linear-gradient(135deg, #b8941f 0%, #9c7d1a 100%);
-      }
-
-
-      /* --- Scanner Container --- */
-      /* スキャナーコンテナ全体 */
-      .scanner-container {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background-color: #000;
-        z-index: 1000;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-      }
-
-      /* スキャナーヘッダー */
-      .scanner-header {
-        position: absolute;
-        top: 0;
-        right: 0;
-        padding: 20px;
-        z-index: 1002;
-      }
-
-      .close-scanner-btn {
-        background-color: #8b6f4e;
-        color: white;
-        border: none;
-        padding: 15px 30px;
-        font-size: 36px;
-        border-radius: 10px;
-        cursor: pointer;
-      }
-      
-      .close-scanner-btn:hover {
-        background-color: #6d5640;
-      }
-
-      /* スキャナービューポート */
-      .scanner-viewport {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        overflow: hidden;
-        background-color: #000;
-      }
-
-      /* Quaggaの要素を制御 */
-      .scanner-viewport canvas,
-      .scanner-viewport video {
-        position: absolute !important;
-        top: 50% !important;
-        left: 50% !important;
-        transform: translate(-50%, -50%) !important;
-        width: 100% !important;
-        height: 100% !important;
-        max-width: none !important;
-        max-height: none !important;
-        object-fit: cover !important;
-      }
-
-      /* 不要な要素を完全に削除 */
-      .scanner-viewport br,
-      .scanner-viewport .drawingBuffer,
-      .scanner-viewport canvas:not(:last-child) {
-        display: none !important;
-      }
-
-      /* スマホ対応 */
-      @media (max-width: 768px) {
-        .scanner-viewport {
-          width: 100%;
-          height: 100%;
-        }
-        
-        .close-scanner-btn {
-          font-size: 24px;
-          padding: 10px 20px;
-        }
-      }
-
-
-      /* --- Results Area --- */
-      #rental-records {
-        margin-top: 90px;
-        background: rgba(255, 255, 255, 0.7);
-        padding: 45px;
-        border-radius: 20px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-      }
-      #records-container {
-        overflow-x: auto;
-      }
-      /* 返却状況の色分け */
-      .status-returned {
-        color: #28a745;
-        font-weight: bold;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
-      }
-      .status-not-returned {
-        color: #dc3545;
-        font-weight: bold;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
-      }
-      /* 利用者ID表示用 */
-      .user-id {
-        display: block;
-        font-size: 0.85em;
-        color: #8b6f4e;
-        margin-top: 15px;
-        font-style: italic;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 60px;
-        font-size: 48px;
-        background: rgba(255, 255, 255, 0.9);
-        border-radius: 15px;
-        overflow: hidden;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      }
-      th, td {
-        padding: 45px;
-        text-align: left;
-        border-bottom: 3px solid #e8dfd2;
-      }
-      th {
-        background: linear-gradient(135deg, #8b6f4e 0%, #6d5a3f 100%);
-        color: #ffffff;
-        font-weight: 700;
-        white-space: nowrap;
-        font-family: 'Noto Serif JP', serif;
-        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
-      }
-      tr:nth-child(even) {
-        background-color: rgba(245, 241, 232, 0.3);
-      }
-      tr:hover {
-        background-color: rgba(212, 175, 55, 0.1);
-        transition: background-color 0.3s ease;
-      }
-      .no-records {
-        font-style: italic;
-        color: #8b6f4e;
-        text-align: center;
-        padding: 75px;
-        font-size: 3.3em;
-        font-family: 'Noto Serif JP', serif;
-      }
-
-
-      /* --- Message Area --- */
-      #message {
-        margin-top: 90px;
-        font-weight: 700;
-        padding: 45px;
-        border-radius: 24px;
-        text-align: center;
-        font-size: 48px;
-        font-family: 'Noto Sans JP', sans-serif;
-      }
-      /* メッセージの種類に応じてスタイルを変える */
-      #message:not(:empty) {
-        display: block;
-        background: linear-gradient(135deg, rgba(212, 175, 55, 0.1) 0%, rgba(212, 175, 55, 0.2) 100%);
-        border: 3px solid #d4af37;
-        color: #8b6f4e;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      }
-
-      /* --- Responsive Design --- */
-      @media (max-width: 768px) { /* テーブルがあるのでブレークポイント調整 */
-        /* .container の調整は下の 600px で行う */
-        th, td {
-            padding: 36px 30px; /* スマホではテーブルパディングを3倍に拡大 */
-            font-size: 3.3em; /* スマホではテーブル文字サイズを3倍に拡大 */
-        }
-      }
-      @media (max-width: 600px) {
-         .container {
-             padding: 30px; /* スマホではコンテナ内パディングを3倍に拡大 */
-         }
-        h1 {
-          font-size: 66px; /* 3倍に拡大 */
-          padding-left: 15px; /* 3倍に拡大 */
-          padding-right: 15px; /* 3倍に拡大 */
-        }
-        .form-group {
-            padding-left: 15px; /* 3倍に拡大 */
-            padding-right: 15px; /* 3倍に拡大 */
-        }
-        #rental-records {
-             padding-left: 15px; /* 3倍に拡大 */
-             padding-right: 15px; /* 3倍に拡大 */
-        }
-        #message {
-            margin-left: 15px; /* 3倍に拡大 */
-            margin-right: 15px; /* 3倍に拡大 */
-            font-size: 45px; /* 3倍に拡大 */
-        }
-        button {
-          width: 100%; /* 小画面ではボタン幅を100%に */
-          margin-right: 0;
-          margin-bottom: 30px; /* ボタン間の縦スペースを3倍に拡大 */
-          padding: 45px; /* 3倍に拡大 */
-          font-size: 48px; /* 3倍に拡大 */
-          min-height: 150px; /* タッチターゲットを3倍に拡大 */
-        }
-         #scan-book-id-button { /* ID修正 */
-             margin-bottom: 30px; /* スキャンボタン下のスペースを3倍に拡大 */
-             padding: 45px; /* 3倍に拡大 */
-         }
-         button:last-of-type {
-             margin-bottom: 0;
-         }
-         
-         /* テーブルのレスポンシブ対応を強化 */
-         table, thead, tbody, th, td, tr {
-             display: block;
-         }
-         
-         /* ヘッダーを非表示 */
-         thead tr {
-             position: absolute;
-             top: -9999px;
-             left: -9999px;
-         }
-         
-         tr {
-             margin-bottom: 45px; /* 3倍に拡大 */
-             border: 3px solid #ccc; /* 3倍に拡大 */
-             border-radius: 24px; /* 3倍に拡大 */
-             background-color: #fff;
-         }
-         
-         td {
-             /* tdをブロック要素として表示し、各セルの前にラベルを表示 */
-             position: relative;
-             padding-left: 50%;
-             border: none;
-             border-bottom: 3px solid #eee; /* 3倍に拡大 */
-         }
-         
-         td:before {
-             /* ラベルとして使用するコンテンツ */
-             position: absolute;
-             top: 45px; /* 3倍に拡大 */
-             left: 45px; /* 3倍に拡大 */
-             width: 45%;
-             padding-right: 30px; /* 3倍に拡大 */
-             white-space: nowrap;
-             font-weight: bold;
-         }
-         
-         /* 各セルのラベル */
-         td:nth-of-type(1):before { content: "書籍ID"; }
-         td:nth-of-type(2):before { content: "書籍名"; }
-         td:nth-of-type(3):before { content: "利用者名"; }
-         td:nth-of-type(4):before { content: "貸出日時"; }
-         td:nth-of-type(5):before { content: "返却予定日"; }
-         td:nth-of-type(6):before { content: "返却状況"; }
-      }
-      /* --- Menu Button --- */
-      .menu-button {
-        background: linear-gradient(135deg, #8b6f4e 0%, #6d5640 100%);
-        color: white;
-        padding: 30px 60px;
-        font-size: 48px;
-        border: none;
-        border-radius: 50px;
-        cursor: pointer;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 15px;
-        margin: 30px 0;
-        transition: all 0.3s;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        font-weight: 700;
-      }
-      
-      .menu-button:hover {
-        background: linear-gradient(135deg, #6d5640 0%, #5a4635 100%);
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-      }
-      .menu-button-container {
-        text-align: center;
-        margin: 30px 0;
-        position: relative;
-        z-index: 3;
-      }
+      /* ページ固有: 検索結果の返却状況表示と利用者ID注記 */
+      .status-returned { color: var(--success); font-weight: 700; }
+      .status-not-returned { color: var(--danger); font-weight: 700; }
+      .user-id { display: block; font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
+      .no-records { margin: 0; padding: 1.5rem 1rem; text-align: center; color: var(--text-muted); }
     </style>
   </head>
   <body>
-    <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-top">← メニューに戻る</a></div>
-    <div class="container">
-      <h1>貸出書籍検索</h1>
+    <header class="app-header">
+      <a href="#" class="app-header-back js-menu-link">← メニュー</a>
+      <span class="app-header-title"><span class="group-dot lending"></span>貸出書籍検索</span>
+    </header>
 
-      <div class="form-group">
-        <label for="book-id">検索する書籍ID</label>
-        <button id="scan-book-id-button">書籍IDをスキャン</button>
-        <input type="text" id="book-id" name="bookId" placeholder="スキャンするか手入力してください">
-        <div id="scanner-container-finder" class="scanner-container" style="display: none;">
-          <div class="scanner-header">
-            <button class="camera-switch-btn" onclick="switchCamera('interactive')">切替</button>
-            <button class="close-scanner-btn" onclick="closeScanner('interactive')">✕ 閉じる</button>
+    <main class="app-main wide">
+      <div class="two-col">
+        <div class="card">
+          <h2 class="card-title">検索条件</h2>
+          <div class="field">
+            <label for="book-id">書籍ID</label>
+            <div class="input-row">
+              <input type="text" id="book-id" name="bookId" placeholder="スキャンするか手入力">
+              <button id="scan-book-id-button">📷 スキャン</button>
+              <button id="search-book-button">検索</button>
+            </div>
+            <div id="scanner-container-finder" class="scanner-container" style="display: none;">
+              <div class="scanner-header">
+                <button class="camera-switch-btn" onclick="switchCamera('interactive')">切替</button>
+                <button class="close-scanner-btn" onclick="closeScanner('interactive')">✕ 閉じる</button>
+              </div>
+              <div id="interactive" class="scanner-viewport"></div>
+            </div>
           </div>
-          <div id="interactive" class="scanner-viewport"></div>
+        </div>
+
+        <div id="rental-records" class="card" style="display: none;">
+          <h2 class="card-title">検索結果</h2>
+          <div id="records-container" class="table-wrap"></div>
         </div>
       </div>
-
-      <button class="btn-utility" onclick="searchRentalRecords()">検索</button>
       <p id="message"></p>
-
-      <div id="rental-records" style="display: none;">
-        <h2>検索結果</h2>
-        <div id="records-container"></div>
-      </div>
-      
-      <!-- デバッグログ表示エリアを削除 -->
-    </div>
+    </main>
 
     <!-- バーコード読み取りは共通スキャナー部品で処理 -->
     <script>
@@ -914,7 +412,7 @@
           
           html += `
             <tr>
-              <td>${record.bookId || 'N/A'}</td>
+              <td class="mono">${record.bookId || 'N/A'}</td>
               <td>${record.bookTitle || 'N/A'}</td>
               <td>${record.userName || 'N/A'}<span class="user-id">ID: ${record.userId || 'N/A'}</span></td>
               <td>${lendingDateStr}</td>
@@ -998,15 +496,13 @@
         }
       });
     </script>
-    <div class="menu-button-container"><a href="#" class="menu-button" id="menu-button-bottom">← メニューに戻る</a></div>
     <script>
       // WebアプリのURLはテンプレート評価時にサーバー側で埋め込まれる(往復なしで即時設定)
       (function() {
         const url = '<?!= getWebAppUrl(); ?>';
-        document.getElementById('menu-button-top').href = url;
-        document.getElementById('menu-button-bottom').href = url;
+        document.querySelectorAll('.js-menu-link').forEach(el => { el.href = url; });
       })();
-      
+
       // ブラウザの戻るボタンを無効化
       window.history.pushState(null, null, window.location.href);
       window.addEventListener('popstate', function(event) {
