@@ -4,3 +4,23 @@ node_modules/
 # 環境固有・個人設定(ローカルには残す)
 CLAUDE.md
 .clasp.json
+
+# エージェント個人設定
+AGENTS.md
+.agents/
+.claude/
+
+# OSが生成するファイル
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# エディタの個人設定
+.vscode/
+.idea/
+
+# ログ・環境変数
+*.log
+npm-debug.log*
+.env
+.env.*
