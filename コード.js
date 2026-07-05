@@ -146,19 +146,37 @@ function includeHtml_(filename) {
 }
 
 /**
- * WebアプリのURLを取得する関数
+ * WebアプリのURLを取得する関数。
+ * Google WorkspaceアカウントのChromeでは /macros/u/1/s/... に補正されて404になる
+ * ことがあるため、Workspace環境ではドメイン付きURL(/a/macros/<ドメイン>/s/...)を
+ * アプリ内リンクに使う。ドメインはデプロイ実行ユーザーのメールアドレスから
+ * 自動判定するので、導入時のコード書き換えは不要。
+ * 個人アカウント(gmail.com等)にはドメイン付きURLが存在しないため書き換えない。
  * @return {string} WebアプリのURL
  */
 function getWebAppUrl() {
   const url = ScriptApp.getService().getUrl();
-  const domain = 'bazaarjapan.com';
-
   if (!url) {
     return url;
   }
 
-  // Google WorkspaceアカウントのChromeでは /macros/u/1/s/... に補正されて404になることがあるため、
-  // 同じデプロイIDのドメイン付きURLをアプリ内リンクに使う。
+  let domain = "";
+  try {
+    // Webアプリは「デプロイしたユーザーとして実行」されるため、
+    // 実行ユーザー=デプロイ者のドメインがそのままアプリのドメインになる
+    const email = Session.getEffectiveUser().getEmail();
+    const atIndex = email ? email.indexOf("@") : -1;
+    const host = atIndex >= 0 ? email.slice(atIndex + 1).trim().toLowerCase() : "";
+    if (host && host !== "gmail.com" && host !== "googlemail.com") {
+      domain = host;
+    }
+  } catch (e) {
+    console.warn(`ドメインの自動判定に失敗したため、URLを書き換えずに使用します: ${e}`);
+  }
+  if (!domain) {
+    return url;
+  }
+
   return url.replace(
     'https://script.google.com/macros/s/',
     `https://script.google.com/a/macros/${domain}/s/`
