@@ -1147,6 +1147,29 @@ function searchCatalog(query) {
     // 検索は全文一致条件が自由(部分一致・複数列)のため一括読み込みで走査する
     // (per-transactionの単一ID検索ではないので TextFinder のfast pathは使えない)
     const data = bookSheet.getDataRange().getValues();
+
+    // 取り置き状況を検索結果に反映する: 取り置き中の予約はコピーを占有しているため、
+    // 予約キーごとに「貸出可能なコピー数」と「取り置き数」を集計し、
+    // 取り置きで在庫が埋まっているタイトルは「取り置き中」と表示する
+    // (書籍DB上は在庫でも、貸出は予約ゲートに弾かれ、予約でキューに並ぶのが正しい操作)
+    const heldCountByKey = new Map();
+    loadActiveReservations_().actives.forEach(r => {
+      if (r.status === "取り置き中") {
+        heldCountByKey.set(r.bookKey, (heldCountByKey.get(r.bookKey) || 0) + 1);
+      }
+    });
+    const availableCountByKey = new Map();
+    if (heldCountByKey.size > 0) {
+      for (let i = 1; i < data.length; i++) {
+        const mn = data[i][0] ? data[i][0].toString().trim() : "";
+        if (!mn) continue;
+        const rowStatus = (data[i][6] || "在庫").toString().trim() || "在庫";
+        if (rowStatus !== "在庫" || dueByBookId.has(mn)) continue;
+        const rowKey = (data[i][1] ? normalizeIsbn_(data[i][1]) : "") || mn;
+        availableCountByKey.set(rowKey, (availableCountByKey.get(rowKey) || 0) + 1);
+      }
+    }
+
     const results = [];
     let truncated = false;
     for (let i = 1; i < data.length; i++) {
@@ -1171,14 +1194,24 @@ function searchCatalog(query) {
         break;
       }
       const dueDateValue = dueByBookId.get(managementNumber);
+      // G列が更新漏れでも未返却の貸出記録があれば貸出中として表示する
+      let displayStatus = dueByBookId.has(managementNumber) ? "貸出中" : status;
+      // 在庫でも取り置きで埋まっているタイトルは「取り置き中」と表示する
+      // (貸出は予約ゲートに弾かれるため。予約ボタンでキューに並べる)
+      if (displayStatus === "在庫" || displayStatus === "") {
+        const bookKey = normalizeIsbn_(isbn) || managementNumber;
+        const heldCount = heldCountByKey.get(bookKey) || 0;
+        if (heldCount > 0 && heldCount >= (availableCountByKey.get(bookKey) || 0)) {
+          displayStatus = "取り置き中";
+        }
+      }
       results.push({
         managementNumber: managementNumber,
         isbn: isbn,
         title: row[2] ? row[2].toString() : "",
         author: row[3] ? row[3].toString() : "",
         publisher: row[4] ? row[4].toString() : "",
-        // G列が更新漏れでも未返却の貸出記録があれば貸出中として表示する
-        status: dueByBookId.has(managementNumber) ? "貸出中" : status,
+        status: displayStatus,
         dueDate: dueDateValue ? toIsoString_(dueDateValue) : ""
       });
     }
@@ -1693,6 +1726,12 @@ function processBulkReturnWithDetails_(bookRecords) {
       message = "返却処理に失敗しました。選択された本の貸出記録が見つかりませんでした。";
     }
 
+    // 返却した本に予約が入っていれば取り置き案内を追記し、予約者へ入荷メールを送る
+    const reservationNotices = buildReservationNoticesForReturns_(returnedBookIds);
+    if (reservationNotices.length > 0) {
+      message += "\n" + reservationNotices.join("\n");
+    }
+
     console.log("一括返却処理完了:", message);
     return {
       success: successCount > 0,
@@ -1835,6 +1874,12 @@ function processBulkReturn_(bookIds) {
     }
      if (errorCount > 0) {
       message += ` ${errorCount}件の更新中にエラーが発生しました。`;
+    }
+
+    // 返却した本に予約が入っていれば取り置き案内を追記し、予約者へ入荷メールを送る
+    const reservationNotices = buildReservationNoticesForReturns_(returnedBookIds);
+    if (reservationNotices.length > 0) {
+      message += "\n" + reservationNotices.join("\n");
     }
 
     return { success: successCount > 0, message: message };

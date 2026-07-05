@@ -71,7 +71,7 @@
         span.className = 'badge';
         span.textContent = status;
         if (status === '在庫') span.classList.add('badge-ok');
-        else if (status === '貸出中') span.classList.add('badge-warn');
+        else if (status === '貸出中' || status === '取り置き中') span.classList.add('badge-warn');
         else span.classList.add('badge-muted');
         return span;
       }
@@ -112,7 +112,7 @@
           row.appendChild(dueCell);
 
           const reserveCell = document.createElement('td');
-          if (item.status === '貸出中') {
+          if (item.status === '貸出中' || item.status === '取り置き中') {
             const reserveBtn = document.createElement('button');
             reserveBtn.textContent = '予約';
             reserveBtn.addEventListener('click', function() {
