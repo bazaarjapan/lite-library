@@ -390,6 +390,9 @@
         locate: true
       }, function(err) {
         if (err) {
+          // getUserMedia成功後にinitが失敗したケースでは映像トラックが残るため、
+          // ウィンドウを開いたままにする前に必ずカメラを解放する
+          cleanup();
           var detail = err && (err.message || err.name) ? '(' + (err.name || 'Error') + ': ' + (err.message || '') + ')' : '';
           showError('カメラを起動できませんでした。ブラウザのカメラ許可を確認して「再試行」を押すか、閉じて手入力してください。' + detail);
           return;
